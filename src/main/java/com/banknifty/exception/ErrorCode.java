@@ -1,0 +1,23 @@
+package com.banknifty.exception;
+
+public enum ErrorCode {
+
+    MARKET_DATA_UNAVAILABLE,
+
+    INSTRUMENT_NOT_FOUND,
+
+    INVALID_INTERVAL,
+
+    INVALID_REQUEST,
+
+    KITE_API_ERROR,
+
+    INDICATOR_CALCULATION_ERROR,
+
+    STRATEGY_EXECUTION_ERROR,
+
+    DATABASE_ERROR,
+
+    INTERNAL_SERVER_ERROR
+
+}

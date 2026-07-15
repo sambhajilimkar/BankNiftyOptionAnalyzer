@@ -1,0 +1,29 @@
+package com.banknifty.market.regime;
+
+public enum MarketRegime {
+
+	OPENING_BREAKOUT,
+
+	TRENDING_BULLISH,
+
+	TRENDING_BEARISH,
+
+	RANGE_BOUND,
+
+	BREAKOUT,
+
+	BREAKDOWN,
+
+	REVERSAL,
+
+	HIGH_VOLATILITY,
+
+	LOW_VOLATILITY,
+
+	EXPIRY_DAY,
+
+	EVENT_DRIVEN,
+
+	UNKNOWN
+
+}
