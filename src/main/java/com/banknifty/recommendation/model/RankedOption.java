@@ -26,5 +26,9 @@ public class RankedOption {
 
 	private BigDecimal target2;
 
+	private Double totalScore;
+
+	private Double confidence;
+
 	private List<String> reasons;
 }

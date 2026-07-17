@@ -1,7 +1,9 @@
 package com.banknifty.model;
 
+import com.banknifty.analysis.MarketBias;
 import com.banknifty.enums.OptionType;
 import com.banknifty.enums.RecommendationAction;
+import com.banknifty.recommendation.model.RankedOption;
 import lombok.Builder;
 
 import java.math.BigDecimal;
@@ -30,7 +32,11 @@ public record Recommendation(
 
 		Integer confidence,
 
-		List<String> reasons
+		List<String> reasons,
+
+		MarketBias marketBias,
+
+		List<RankedOption> topRankedContracts
 
 ) {
 }

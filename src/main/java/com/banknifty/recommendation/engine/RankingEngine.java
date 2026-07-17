@@ -312,13 +312,7 @@ public class RankingEngine {
 
 				.filter(this::isTradable)
 
-				.sorted(Comparator.comparingDouble(OptionAnalysis::getTotalScore)
-
-						.reversed()
-
-						.thenComparingDouble(OptionAnalysis::getConfidence)
-
-						.reversed())
+				.sorted(rankingComparator())
 
 				.collect(Collectors.toList());
 
@@ -327,6 +321,24 @@ public class RankingEngine {
 		assignRanks(ranked);
 
 		return ranked;
+
+	}
+
+	private Comparator<OptionAnalysis> rankingComparator() {
+
+		return Comparator.comparingDouble(OptionAnalysis::getTotalScore)
+
+				.reversed()
+
+				.thenComparing(Comparator.comparingDouble(OptionAnalysis::getConfidence).reversed())
+
+				.thenComparing(Comparator.comparing(
+
+						(OptionAnalysis analysis) -> analysis.getCandidate().getDistanceFromATM()))
+
+				.thenComparing(analysis -> analysis.getCandidate().getTradingSymbol(),
+
+						Comparator.nullsLast(String::compareTo));
 
 	}
 
@@ -363,37 +375,10 @@ public class RankingEngine {
 	private boolean isTradable(OptionAnalysis analysis) {
 
 		if (analysis.getCandidate().getPremium() == null) {
-
 			return false;
-
 		}
 
-		if (analysis.getCandidate().getPremium().doubleValue() <= 0) {
-
-			return false;
-
-		}
-
-		if (analysis.getCandidate().getVolume() == null) {
-
-			return false;
-
-		}
-
-		if (analysis.getCandidate().getVolume() < 100L) {
-
-			return false;
-
-		}
-
-		if (analysis.getCandidate().getOpenInterest() == null) {
-
-			return false;
-
-		}
-
-		return analysis.getCandidate().getOpenInterest() > 500L;
-
+		return analysis.getCandidate().getPremium().doubleValue() > 0;
 	}
 
 	private List<OptionAnalysis> removeDuplicateStrikes(List<OptionAnalysis> analyses) {
@@ -412,9 +397,7 @@ public class RankingEngine {
 
 				.stream()
 
-				.sorted(Comparator.comparingDouble(OptionAnalysis::getTotalScore)
-
-						.reversed())
+				.sorted(rankingComparator())
 
 				.collect(Collectors.toList());
 
