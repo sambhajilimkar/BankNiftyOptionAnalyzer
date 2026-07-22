@@ -53,7 +53,11 @@ public record TradeRecommendation(
 
 		List<String> reasons,
 
-		List<String> rejectedReasons
+		List<String> rejectedReasons,
+
+		InstitutionalAnalysis institutionalAnalysis,
+
+		Integer technicalConfidence
 
 ) {
 }

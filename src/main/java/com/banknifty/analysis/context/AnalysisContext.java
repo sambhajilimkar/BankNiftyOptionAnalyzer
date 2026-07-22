@@ -6,6 +6,7 @@ import com.banknifty.indicator.result.EMAResult;
 import com.banknifty.indicator.result.MACDResult;
 import com.banknifty.indicator.result.RSIResult;
 import com.banknifty.indicator.result.VWAPResult;
+import com.banknifty.recommendation.model.InstitutionalAnalysis;
 import com.banknifty.service.OpenInterestAnalysisService;
 import com.banknifty.service.PivotResult;
 import com.banknifty.service.SupportResistanceResult;
@@ -57,7 +58,7 @@ public class AnalysisContext {
 
 	/*
 	 * ============================================================ Open Interest
-	 * Analysis ============================================================
+	 * ============================================================
 	 */
 
 	private OpenInterestAnalysisService.OpenInterestResult openInterest;
@@ -70,5 +71,12 @@ public class AnalysisContext {
 	private SupportResistanceResult supportResistance;
 
 	private PivotResult pivot;
+
+	/*
+	 * ============================================================ Institutional
+	 * Analysis ============================================================
+	 */
+
+	private InstitutionalAnalysis institutionalAnalysis;
 
 }

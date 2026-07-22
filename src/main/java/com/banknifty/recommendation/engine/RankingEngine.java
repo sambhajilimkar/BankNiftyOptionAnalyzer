@@ -1,14 +1,20 @@
 package com.banknifty.recommendation.engine;
 
-import com.banknifty.analysis.context.AnalysisContext;
-import com.banknifty.enums.OptionType;
-import com.banknifty.recommendation.model.OptionAnalysis;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import org.springframework.stereotype.Service;
+
+import com.banknifty.analysis.context.AnalysisContext;
+import com.banknifty.enums.OptionType;
+import com.banknifty.recommendation.model.OptionAnalysis;
+import com.banknifty.recommendation.model.OptionCandidate;
+
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Slf4j
@@ -19,275 +25,15 @@ public class RankingEngine {
 		List<OptionAnalysis> ranked = rank(analyses, context);
 
 		if (ranked.isEmpty()) {
-
 			return null;
-
 		}
 
 		return ranked.getFirst();
-
 	}
 
 	public List<OptionAnalysis> top(List<OptionAnalysis> analyses, AnalysisContext context, int limit) {
 
-		return rank(analyses, context)
-
-				.stream()
-
-				.limit(limit)
-
-				.collect(Collectors.toList());
-
-	}
-
-	private void assignRanks(List<OptionAnalysis> analyses) {
-
-		int rank = 1;
-
-		for (OptionAnalysis analysis : analyses) {
-
-			analysis.setRank(rank++);
-
-		}
-
-	}
-
-	private double compositeScore(OptionAnalysis analysis, AnalysisContext context) {
-
-		double score = 0;
-
-		score += trendWeight(analysis);
-
-		score += liquidityWeight(analysis);
-
-		score += strikeWeight(analysis);
-
-		score += openInterestWeight(analysis);
-
-		score += volatilityWeight(analysis);
-
-		score += greekWeight(analysis);
-
-		score += expiryWeight(analysis);
-
-		score += riskRewardWeight(analysis);
-
-		score -= penaltyScore(analysis, context);
-
-		return Math.max(score, 0);
-
-	}
-
-	private double trendWeight(OptionAnalysis analysis) {
-
-		return analysis.getTrendScore() * 0.35;
-
-	}
-
-	private double liquidityWeight(OptionAnalysis analysis) {
-
-		return analysis.getLiquidityScore() * 0.15;
-
-	}
-
-	private double strikeWeight(OptionAnalysis analysis) {
-
-		return analysis.getStrikeScore() * 0.10;
-
-	}
-
-	private double openInterestWeight(OptionAnalysis analysis) {
-
-		return analysis.getOpenInterestScore() * 0.10;
-
-	}
-
-	private double volatilityWeight(OptionAnalysis analysis) {
-
-		return analysis.getVolatilityScore() * 0.05;
-
-	}
-
-	private double greekWeight(OptionAnalysis analysis) {
-
-		return analysis.getGreekScore() * 0.10;
-
-	}
-
-	private double expiryWeight(OptionAnalysis analysis) {
-
-		return analysis.getExpiryScore() * 0.05;
-
-	}
-
-	private double riskRewardWeight(OptionAnalysis analysis) {
-
-		return analysis.getRiskRewardScore() * 0.10;
-
-	}
-
-	private double penaltyScore(OptionAnalysis analysis, AnalysisContext context) {
-
-		double penalty = 0;
-
-		penalty += marketBiasPenalty(analysis, context);
-
-		penalty += liquidityPenalty(analysis);
-
-		penalty += strikePenalty(analysis);
-
-		penalty += expiryPenalty(analysis);
-
-		penalty += confidencePenalty(analysis);
-
-		return penalty;
-
-	}
-
-	private double marketBiasPenalty(OptionAnalysis analysis, AnalysisContext context) {
-
-		if (context.getMarketBias() == null) {
-			return 0;
-		}
-
-		OptionType type = analysis.getCandidate().getOptionType();
-
-		switch (context.getMarketBias()) {
-
-		case STRONG_BULLISH:
-
-			if (type == OptionType.PE) {
-				analysis.addReason("Penalty : Against Strong Bullish Trend");
-				return 20;
-			}
-
-			break;
-
-		case BULLISH:
-
-			if (type == OptionType.PE) {
-				analysis.addReason("Penalty : Against Bullish Trend");
-				return 12;
-			}
-
-			break;
-
-		case STRONG_BEARISH:
-
-			if (type == OptionType.CE) {
-				analysis.addReason("Penalty : Against Strong Bearish Trend");
-				return 20;
-			}
-
-			break;
-
-		case BEARISH:
-
-			if (type == OptionType.CE) {
-				analysis.addReason("Penalty : Against Bearish Trend");
-				return 12;
-			}
-
-			break;
-
-		default:
-			return 0;
-		}
-
-		return 0;
-
-	}
-
-	private double liquidityPenalty(OptionAnalysis analysis) {
-
-		double penalty = 0;
-
-		if (analysis.getCandidate().getLiquidityIndex() != null) {
-
-			double liquidity = analysis.getCandidate().getLiquidityIndex().doubleValue();
-
-			if (liquidity < 3) {
-
-				penalty += 10;
-
-				analysis.addReason("Penalty : Low Liquidity");
-
-			}
-
-		}
-
-		if (analysis.getCandidate().getSpreadPercentage() != null) {
-
-			double spread = analysis.getCandidate().getSpreadPercentage().doubleValue();
-
-			if (spread > 2.5) {
-
-				penalty += 8;
-
-				analysis.addReason("Penalty : Wide Spread");
-
-			}
-
-		}
-
-		return penalty;
-
-	}
-
-	private double strikePenalty(OptionAnalysis analysis) {
-
-		OptionType type = analysis.getCandidate().getOptionType();
-
-		if (analysis.getCandidate().isOtm()) {
-
-			analysis.addReason("Penalty : OTM Strike");
-
-			return 5;
-
-		}
-
-		return 0;
-
-	}
-
-	private double expiryPenalty(OptionAnalysis analysis) {
-
-		if (analysis.getCandidate().getExpiry() == null) {
-
-			return 0;
-
-		}
-
-		long days = java.time.temporal.ChronoUnit.DAYS.between(
-
-				java.time.LocalDate.now(),
-
-				analysis.getCandidate().getExpiry());
-
-		if (days == 0) {
-
-			analysis.addReason("Penalty : Expiry Day");
-
-			return 5;
-
-		}
-
-		return 0;
-
-	}
-
-	private double confidencePenalty(OptionAnalysis analysis) {
-
-		if (analysis.getTrendScore() < 15) {
-
-			analysis.addReason("Penalty : Weak Trend");
-
-			return 5;
-
-		}
-
-		return 0;
-
+		return rank(analyses, context).stream().limit(limit).collect(Collectors.toList());
 	}
 
 	public List<OptionAnalysis> rank(List<OptionAnalysis> analyses, AnalysisContext context) {
@@ -296,155 +42,175 @@ public class RankingEngine {
 			return List.of();
 		}
 
-		analyses.forEach(a -> {
+		/*
+		 * RankingEngine never calculates scores.
+		 *
+		 * OptionAnalysisEngine is the single source of truth.
+		 *
+		 * RankingEngine only performs: 1. Minor score calibration 2. Tradable filtering
+		 * 3. Sorting 4. Duplicate removal 5. Rank assignment
+		 */
 
-			double composite = compositeScore(a, context);
+		analyses.forEach(this::calibrateScore);
 
-			composite = calibrateScore(a, composite);
-
-			a.setTotalScore(composite);
-
-			a.setConfidence(Math.min(composite, 100));
-
-		});
-
-		List<OptionAnalysis> ranked = analyses.stream()
-
-				.filter(this::isTradable)
-
-				.sorted(rankingComparator())
-
+		List<OptionAnalysis> ranked = analyses.stream().filter(this::isTradable).sorted(rankingComparator())
 				.collect(Collectors.toList());
 
 		ranked = removeDuplicateStrikes(ranked);
 
 		assignRanks(ranked);
 
-		return ranked;
+		log.info("Ranking completed. {} contracts ranked.", ranked.size());
 
+		return ranked;
+	}
+
+	private void assignRanks(List<OptionAnalysis> analyses) {
+
+		int rank = 1;
+
+		for (OptionAnalysis analysis : analyses) {
+			analysis.setRank(rank++);
+		}
+	}
+
+	private double liquidityScore(OptionAnalysis analysis) {
+
+		if (analysis.getCandidate() == null) {
+			return 0;
+		}
+
+		return analysis.getCandidate().getVolume() + analysis.getCandidate().getOpenInterest();
 	}
 
 	private Comparator<OptionAnalysis> rankingComparator() {
 
-		return Comparator.comparingDouble(OptionAnalysis::getTotalScore)
+		return Comparator
 
-				.reversed()
+				// Highest score first
+				.comparingDouble(OptionAnalysis::getTotalScore).reversed()
 
+				// Highest confidence
 				.thenComparing(Comparator.comparingDouble(OptionAnalysis::getConfidence).reversed())
 
-				.thenComparing(Comparator.comparing(
+				// Higher probability
+				.thenComparing(Comparator.comparingDouble(OptionAnalysis::getProbabilityScore).reversed())
 
-						(OptionAnalysis analysis) -> analysis.getCandidate().getDistanceFromATM()))
+				// Better Risk Reward
+				.thenComparing(Comparator.comparingDouble(OptionAnalysis::getRiskRewardScore).reversed())
 
-				.thenComparing(analysis -> analysis.getCandidate().getTradingSymbol(),
-
-						Comparator.nullsLast(String::compareTo));
-
+				// Better Liquidity
+				.thenComparing(Comparator.comparingDouble(OptionAnalysis::getLiquidityScore).reversed());
 	}
 
-	private double calibrateScore(OptionAnalysis analysis, double score) {
+	/**
+	 * Small ranking adjustments only.
+	 *
+	 * OptionAnalysisEngine has already calculated the score. RankingEngine MUST
+	 * NEVER recompute it.
+	 */
+	private void calibrateScore(OptionAnalysis analysis) {
 
-		if (analysis.getCandidate().isAtm()) {
-
-			score += 3;
-
-			analysis.addReason("ATM Bonus");
-
+		if (analysis == null || analysis.getCandidate() == null) {
+			return;
 		}
 
-		if (analysis.getCandidate().isItm()) {
+		double score = analysis.getTotalScore();
+
+		OptionCandidate candidate = analysis.getCandidate();
+
+		/*
+		 * These methods depend on your OptionCandidate class. We'll adjust them in the
+		 * next step if needed.
+		 */
+		if (candidate.isAtm()) {
 
 			score += 2;
 
+			analysis.addReason("ATM Bonus");
+		} else if (candidate.isItm()) {
+
+			score += 1;
+
 			analysis.addReason("ITM Bonus");
+		} else if (candidate.isOtm()) {
 
-		}
-
-		if (analysis.getCandidate().isOtm()) {
-
-			score -= 3;
+			score -= 2;
 
 			analysis.addReason("OTM Penalty");
-
 		}
 
-		return Math.max(score, 0);
+		analysis.setTotalScore(Math.min(score, 100));
 
+		analysis.calculateConfidence();
 	}
 
 	private boolean isTradable(OptionAnalysis analysis) {
 
-		if (analysis.getCandidate().getPremium() == null) {
+		if (analysis == null || analysis.getCandidate() == null) {
 			return false;
 		}
 
-		return analysis.getCandidate().getPremium().doubleValue() > 0;
+		OptionCandidate candidate = analysis.getCandidate();
+
+		/*
+		 * Premium
+		 */
+		if (candidate.getPremium() == null || candidate.getPremium().doubleValue() <= 0) {
+
+			analysis.addReason("Rejected : Invalid Premium");
+			return false;
+		}
+
+		/*
+		 * Liquidity
+		 */
+		if (candidate.getLiquidityIndex() != null && candidate.getLiquidityIndex().doubleValue() <= 0) {
+
+			analysis.addReason("Rejected : No Liquidity");
+			return false;
+		}
+
+		return true;
 	}
 
 	private List<OptionAnalysis> removeDuplicateStrikes(List<OptionAnalysis> analyses) {
 
-		return analyses.stream()
+		Map<String, OptionAnalysis> map = new LinkedHashMap<>();
 
-				.collect(Collectors.toMap(
+		for (OptionAnalysis analysis : analyses) {
 
-						a -> a.getCandidate().getTradingSymbol(),
+			OptionCandidate candidate = analysis.getCandidate();
 
-						a -> a,
+			if (candidate == null) {
+				continue;
+			}
 
-						(a, b) -> a.getTotalScore() >= b.getTotalScore() ? a : b))
+			String key = candidate.getExpiry() + "-" + candidate.getStrike() + "-" + candidate.getOptionType();
 
-				.values()
+			map.putIfAbsent(key, analysis);
+		}
 
-				.stream()
-
-				.sorted(rankingComparator())
-
-				.collect(Collectors.toList());
-
-	}
-
-	public List<OptionAnalysis> highProbabilityTrades(
-
-			List<OptionAnalysis> analyses,
-
-			AnalysisContext context) {
-
-		return rank(analyses, context)
-
-				.stream()
-
-				.filter(a -> a.getConfidence() >= 75)
-
-				.collect(Collectors.toList());
-
+		return new ArrayList<>(map.values());
 	}
 
 	public OptionAnalysis bestCE(List<OptionAnalysis> analyses, AnalysisContext context) {
 
-		return rank(analyses, context)
-
-				.stream()
-
-				.filter(a -> a.getCandidate().getOptionType() == OptionType.CE)
-
-				.findFirst()
-
-				.orElse(null);
-
+		return rank(analyses, context).stream().filter(a -> a.getCandidate() != null)
+				.filter(a -> a.getCandidate().getOptionType() == OptionType.CE).findFirst().orElse(null);
 	}
 
 	public OptionAnalysis bestPE(List<OptionAnalysis> analyses, AnalysisContext context) {
 
-		return rank(analyses, context)
+		return rank(analyses, context).stream().filter(a -> a.getCandidate() != null)
+				.filter(a -> a.getCandidate().getOptionType() == OptionType.PE).findFirst().orElse(null);
+	}
 
-				.stream()
+	public List<OptionAnalysis> highProbabilityTrades(List<OptionAnalysis> analyses, AnalysisContext context,
+			double minimumScore) {
 
-				.filter(a -> a.getCandidate().getOptionType() == OptionType.PE)
-
-				.findFirst()
-
-				.orElse(null);
-
+		return rank(analyses, context).stream().filter(a -> a.getTotalScore() >= minimumScore)
+				.collect(Collectors.toList());
 	}
 
 }
