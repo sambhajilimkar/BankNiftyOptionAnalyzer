@@ -85,9 +85,13 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 				AnalysisContext.builder().spotPrice(spotPrice).build());
 		snapshotHistoryService.save(snapshot);
 
-		if (technicalSignal.confidence() < MINIMUM_TECHNICAL_CONFIDENCE) {
-			return noTrade(normalized, spotPrice, technicalSignal, institutional,
-					"Technical confirmation is below " + MINIMUM_TECHNICAL_CONFIDENCE + "%");
+		int overallConfidence = (int) Math
+				.round((technicalSignal.confidence() * 0.60) + (institutional.getConfidence() * 0.40));
+
+		if (overallConfidence < 55) {
+			return noTrade(normalized, spotPrice,
+					new Signal(technicalSignal.optionType(), overallConfidence, technicalSignal.reasons()),
+					institutional, "Combined technical + institutional confidence is below 55%");
 		}
 
 		if (institutionalDisagrees(technicalSignal.optionType(), institutional)) {
@@ -120,8 +124,8 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 		List<String> reasons = new ArrayList<>(signal.reasons());
 		reasons.addAll(best.getReasons());
 		reasons.add("Full option-chain institutional analysis confirmed the selected contract");
-		int confidence = (int) Math.round(Math.min(100,
-				(signal.confidence() * 0.55) + (institutional.getConfidence() * 0.45)));
+		int confidence = (int) Math
+				.round(Math.min(100, (signal.confidence() * 0.55) + (institutional.getConfidence() * 0.45)));
 
 		return TradeRecommendation.builder().action(RecommendationAction.BUY).instrument(request.instrument())
 				.expiryDate(best.getCandidate().getExpiry()).expiryLabel(request.expiryType().name())
@@ -130,12 +134,14 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 				.entryMax(best.getEntry()).stopLoss(best.getStopLoss()).target1(best.getTarget1())
 				.target2(best.getTarget2()).target3(level(best.getEntry(), 1.60)).confidence(confidence)
 				.risk(riskLevel(request.riskProfile())).quantity(positionLots(request.capital(), best.getEntry()))
-				.holdingTime(holdingTime(request.tradingStyle())).reasons(List.copyOf(reasons)).rejectedReasons(List.of())
-				.institutionalAnalysis(institutional).technicalConfidence(signal.confidence()).build();
+				.holdingTime(holdingTime(request.tradingStyle())).reasons(List.copyOf(reasons))
+				.rejectedReasons(List.of()).institutionalAnalysis(institutional)
+				.technicalConfidence(signal.confidence()).build();
 	}
 
 	private boolean institutionalDisagrees(OptionType technicalDirection, InstitutionalAnalysis institutional) {
-		if (institutional == null || institutional.getMarketBias() == null || institutional.getMarketBias() == MarketBias.SIDEWAYS) {
+		if (institutional == null || institutional.getMarketBias() == null
+				|| institutional.getMarketBias() == MarketBias.SIDEWAYS) {
 			return false;
 		}
 		return (technicalDirection == OptionType.CE && (institutional.getMarketBias() == MarketBias.BEARISH
@@ -156,17 +162,46 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 		int bearish = 0;
 		List<String> bullishReasons = new ArrayList<>();
 		List<String> bearishReasons = new ArrayList<>();
-		if (indicators.ema().bullishAlignment()) { bullish += 25; bullishReasons.add("EMA bullish alignment"); }
-		if (indicators.ema().bearishAlignment()) { bearish += 25; bearishReasons.add("EMA bearish alignment"); }
-		if (indicators.rsi().bullish() && indicators.rsi().rising()) { bullish += 15; bullishReasons.add("RSI rising"); }
-		if (indicators.rsi().bearish() && indicators.rsi().falling()) { bearish += 15; bearishReasons.add("RSI falling"); }
-		if (indicators.macd().bullish() || indicators.macd().bullishCross()) { bullish += 20; bullishReasons.add("MACD bullish"); }
-		if (indicators.macd().bearish() || indicators.macd().bearishCross()) { bearish += 20; bearishReasons.add("MACD bearish"); }
-		if (indicators.vwap().aboveVWAP()) { bullish += 15; bullishReasons.add("Price above VWAP"); }
-		else { bearish += 15; bearishReasons.add("Price below VWAP"); }
+		if (indicators.ema().bullishAlignment()) {
+			bullish += 25;
+			bullishReasons.add("EMA bullish alignment");
+		}
+		if (indicators.ema().bearishAlignment()) {
+			bearish += 25;
+			bearishReasons.add("EMA bearish alignment");
+		}
+		if (indicators.rsi().bullish() && indicators.rsi().rising()) {
+			bullish += 15;
+			bullishReasons.add("RSI rising");
+		}
+		if (indicators.rsi().bearish() && indicators.rsi().falling()) {
+			bearish += 15;
+			bearishReasons.add("RSI falling");
+		}
+		if (indicators.macd().bullish() || indicators.macd().bullishCross()) {
+			bullish += 20;
+			bullishReasons.add("MACD bullish");
+		}
+		if (indicators.macd().bearish() || indicators.macd().bearishCross()) {
+			bearish += 20;
+			bearishReasons.add("MACD bearish");
+		}
+		if (indicators.vwap().aboveVWAP()) {
+			bullish += 15;
+			bullishReasons.add("Price above VWAP");
+		} else {
+			bearish += 15;
+			bearishReasons.add("Price below VWAP");
+		}
 		if (indicators.adx().strongTrend()) {
-			if (indicators.adx().bullish()) { bullish += 15; bullishReasons.add("ADX confirms bullish trend"); }
-			if (indicators.adx().bearish()) { bearish += 15; bearishReasons.add("ADX confirms bearish trend"); }
+			if (indicators.adx().bullish()) {
+				bullish += 15;
+				bullishReasons.add("ADX confirms bullish trend");
+			}
+			if (indicators.adx().bearish()) {
+				bearish += 15;
+				bearishReasons.add("ADX confirms bearish trend");
+			}
 		}
 		return bullish >= bearish ? new Signal(OptionType.CE, Math.min(bullish, 95), bullishReasons)
 				: new Signal(OptionType.PE, Math.min(bearish, 95), bearishReasons);
@@ -175,17 +210,17 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 	private TradeRecommendation noTrade(RecommendationRequest request, BigDecimal spotPrice, Signal signal,
 			InstitutionalAnalysis institutional, String rejectedReason) {
 		return TradeRecommendation.builder().action(RecommendationAction.WAIT).instrument(request.instrument())
-				.expiryLabel(request.expiryType().name()).spotPrice(spotPrice).optionType(signal.optionType())
-				.confidence(signal.confidence()).risk(riskLevel(request.riskProfile())).quantity(0).holdingTime("No trade")
-				.reasons(List.copyOf(signal.reasons())).rejectedReasons(List.of(rejectedReason))
+				.expiryLabel(request.expiryType().name()).spotPrice(spotPrice).optionType(null)
+				.confidence(signal.confidence()).risk(riskLevel(request.riskProfile())).quantity(0)
+				.holdingTime("No trade").reasons(List.copyOf(signal.reasons())).rejectedReasons(List.of(rejectedReason))
 				.institutionalAnalysis(institutional).technicalConfidence(signal.confidence()).build();
 	}
 
 	private List<Candle> historicalCandles(String symbol) {
 		LocalDateTime to = LocalDateTime.now();
 		try {
-			return historicalDataProvider.fetchHistoricalData(instrumentProvider.getInstrumentToken(NSE, symbol), symbol,
-					NSE, INTERVAL, to.minusDays(HISTORY_DAYS), to, false, false);
+			return historicalDataProvider.fetchHistoricalData(instrumentProvider.getInstrumentToken(NSE, symbol),
+					symbol, NSE, INTERVAL, to.minusDays(HISTORY_DAYS), to, false, false);
 		} catch (Exception | KiteException exception) {
 			throw new IllegalStateException("Unable to load Zerodha historical candles for " + symbol, exception);
 		}
@@ -193,35 +228,57 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 
 	private BigDecimal liveSpotPrice(String symbol) {
 		BigDecimal ltp = quoteProvider.getLTP(NSE + ":" + symbol);
-		if (ltp == null || ltp.signum() <= 0) throw new IllegalStateException("No live index price available for " + symbol);
+		if (ltp == null || ltp.signum() <= 0)
+			throw new IllegalStateException("No live index price available for " + symbol);
 		return ltp;
 	}
 
 	private RecommendationRequest normalize(RecommendationRequest request) {
-		if (request == null || request.instrument() == null || request.instrument().isBlank()) throw new IllegalArgumentException("Instrument is required");
+		if (request == null || request.instrument() == null || request.instrument().isBlank())
+			throw new IllegalArgumentException("Instrument is required");
 		return RecommendationRequest.builder().instrument(optionUnderlying(request.instrument()))
 				.expiryType(request.expiryType() == null ? com.banknifty.enums.ExpiryType.WEEKLY : request.expiryType())
 				.tradingStyle(request.tradingStyle() == null ? TradingStyle.INTRADAY : request.tradingStyle())
-				.riskProfile(request.riskProfile() == null ? RiskProfile.BALANCED : request.riskProfile()).capital(request.capital()).build();
+				.riskProfile(request.riskProfile() == null ? RiskProfile.BALANCED : request.riskProfile())
+				.capital(request.capital()).build();
 	}
 
-	private String spotSymbol(String instrument) { return "BANKNIFTY".equalsIgnoreCase(instrument) ? "NIFTY BANK" : instrument; }
+	private String spotSymbol(String instrument) {
+		return "BANKNIFTY".equalsIgnoreCase(instrument) ? "NIFTY BANK" : instrument;
+	}
+
 	private String optionUnderlying(String instrument) {
 		String normalized = instrument.trim().toUpperCase();
 		return normalized.equals("NIFTY BANK") || normalized.equals("BANK NIFTY") ? "BANKNIFTY" : normalized;
 	}
+
 	private int positionLots(Double capital, BigDecimal entry) {
-		if (capital == null || capital <= 0 || entry == null || entry.signum() <= 0) return 1;
+		if (capital == null || capital <= 0 || entry == null || entry.signum() <= 0)
+			return 1;
 		return Math.max(1, Math.min(5, (int) Math.floor(capital / entry.doubleValue() / 100.0)));
 	}
+
 	private String holdingTime(TradingStyle style) {
-		return switch (style) { case SCALPING -> "5-15 minutes"; case INTRADAY -> "30-90 minutes"; case SWING -> "1-3 trading days"; case POSITIONAL -> "1-4 weeks"; };
+		return switch (style) {
+		case SCALPING -> "5-15 minutes";
+		case INTRADAY -> "30-90 minutes";
+		case SWING -> "1-3 trading days";
+		case POSITIONAL -> "1-4 weeks";
+		};
 	}
+
 	private RiskLevel riskLevel(RiskProfile profile) {
-		return switch (profile) { case CONSERVATIVE -> RiskLevel.LOW; case BALANCED, MODERATE -> RiskLevel.MEDIUM; case AGGRESSIVE -> RiskLevel.HIGH; };
+		return switch (profile) {
+		case CONSERVATIVE -> RiskLevel.LOW;
+		case BALANCED, MODERATE -> RiskLevel.MEDIUM;
+		case AGGRESSIVE -> RiskLevel.HIGH;
+		};
 	}
+
 	private BigDecimal level(BigDecimal value, double multiplier) {
 		return value.multiply(BigDecimal.valueOf(multiplier)).setScale(2, RoundingMode.HALF_UP);
 	}
-	private record Signal(OptionType optionType, int confidence, List<String> reasons) { }
+
+	private record Signal(OptionType optionType, int confidence, List<String> reasons) {
+	}
 }

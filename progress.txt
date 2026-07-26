@@ -1,0 +1,377 @@
+POST /recommend
+        │
+        ▼
+DefaultRecommendationEngine
+        │
+        ▼
+Normalize Request
+        │
+        ▼
+Fetch Live BANKNIFTY Spot
+(KiteQuoteProvider)
+        │
+        ▼
+Fetch 10 Days Historical Candles
+(KiteHistoricalDataProvider)
+        │
+        ▼
+IndicatorPipeline
+        │
+        ├── EMA
+        ├── RSI
+        ├── MACD
+        ├── VWAP
+        └── ADX
+        │
+        ▼
+Technical Signal
+        │
+        ▼
+Fetch Latest Option Chain Snapshot
+        │
+        ▼
+InstitutionalAnalysisEngine
+        │
+        ├── PCR
+        ├── OI Build-up
+        ├── Max Pain
+        ├── Gamma Exposure
+        ├── Support/Resistance
+        └── Market Sentiment
+        │
+        ▼
+Combine Confidence
+        │
+        ▼
+Load Complete Option Universe
+        │
+        ▼
+OptionChainAnalyzer
+        │
+        ▼
+OptionAnalysisEngine
+        │
+        ▼
+RankingEngine
+        │
+        ▼
+Best Contract
+        │
+        ▼
+TradeRecommendation
+
+
+
+
+
+
+1. Technical Analysis
+
+✔ EMA
+
+✔ RSI
+
+✔ MACD
+
+✔ VWAP
+
+✔ ADX
+
+Produces
+
+Signal
+
+containing
+
+CE / PE
+confidence
+reasons
+2. Historical Data
+
+Completed
+
+KiteHistoricalDataProvider
+
+Uses Zerodha historical candles.
+
+3. Live Spot
+
+Completed
+
+KiteQuoteProvider
+
+Uses LTP.
+
+4. Option Chain Snapshot
+
+Completed
+
+OptionSnapshotService
+
+Produces
+
+Calls
+Puts
+OI
+Volume
+IV
+Greeks
+5. Institutional Analysis
+
+Completed
+
+Current calculators
+
+✔ PCR
+
+✔ OI Build-up
+
+✔ Max Pain
+
+✔ Gamma Exposure
+
+✔ Support
+
+✔ Resistance
+
+✔ Market Sentiment
+
+6. Option Universe
+
+Completed
+
+OptionUniverseService
+
+Loads all CE & PE contracts.
+
+7. OptionChainAnalyzer
+
+Completed
+
+Creates candidate contracts.
+
+8. OptionAnalysisEngine
+
+Completed
+
+Evaluates
+
+liquidity
+spread
+premium
+expiry
+Greeks
+9. RankingEngine
+
+Completed
+
+Ranks all candidates.
+
+Returns Top-5.
+
+10. TradeRecommendation
+
+Completed
+
+Returns
+
+BUY
+WAIT
+
+with
+
+Entry
+SL
+Targets
+Confidence
+Risk
+Reasons
+Current Problems
+Problem 1
+
+Institutional score averaging
+
+Current
+
+score =
+PCR +
+OI +
+MaxPain +
+Gamma +
+Support +
+Liquidity +
+Volatility
+
+÷7
+
+But
+
+Liquidity
+
+Volatility
+
+are never populated.
+
+Example
+
+60
+
+0
+
+60
+
+100
+
+70
+
+0
+
+0
+
+↓
+
+41.4
+
+instead of around
+
+72
+Problem 2
+
+WAIT
+
+Sometimes
+
+WAIT
+
+is returned although
+
+RankingEngine already found tradable contracts.
+
+Problem 3
+
+WAIT response
+
+Earlier
+
+optionType
+
+was still
+
+CE
+
+instead of
+
+null
+
+(The file you shared already has this corrected.)
+
+Problem 4
+
+Technical confidence cap
+
+Current
+
+Math.min(score,95)
+
+instead of
+
+100
+
+Minor issue.
+
+Problem 5
+
+No dynamic confidence weighting
+
+Current
+
+60%
+
+Technical
+
+40%
+
+Institutional
+
+for every market.
+
+This is static.
+
+Problem 6
+
+Ranking is only done for one direction
+
+Current
+
+Technical says PE
+
+↓
+
+Analyze only PE
+
+It ignores CE completely.
+
+Biggest Missing Feature
+
+Your original goal was:
+
+Analyze the complete BankNifty option chain and recommend the BEST contract.
+
+The current engine still does:
+
+Indicators
+
+↓
+
+Choose CE/PE
+
+↓
+
+Analyze only that side
+
+Instead of
+
+Analyze ALL CE
+
++
+
+Analyze ALL PE
+
+↓
+
+Rank every contract
+
+↓
+
+Return BEST contract
+
+This is the largest architectural gap remaining.
+
+What Is Still Pending
+High Priority
+Analyze both CE and PE together instead of pre-filtering by technical direction.
+Fix institutional confidence averaging so only populated metrics contribute to the score.
+Base the final decision on the highest-ranked contract, not on a preselected direction.
+Medium Priority
+Add Liquidity score calculation.
+Add Volatility score calculation.
+Improve confidence weighting to adapt to market conditions instead of using a fixed 60/40 split.
+Low Priority
+Allow technical confidence to reach 100 instead of capping at 95.
+Fine-tune ranking weights based on live performance.
+Overall Progress
+Module	Status
+Live Spot	✅ Complete
+Historical Data	✅ Complete
+Technical Indicators	✅ Complete
+Option Chain Snapshot	✅ Complete
+Institutional Analysis	✅ Complete (needs scoring fix)
+Option Universe	✅ Complete
+OptionChainAnalyzer	✅ Complete
+OptionAnalysisEngine	✅ Complete
+RankingEngine	✅ Complete
+Recommendation API	✅ Functional
+Full CE+PE Universal Ranking	❌ Pending
+Estimated completion
+
+Based on the current state of the project, the recommendation engine is approximately 85–90% complete. The remaining work is primarily about making the final recommendation logic match your original objective: rank every tradable CE and PE contract and return the single best opportunity, rather than selecting a direction first and analyzing only that side.
