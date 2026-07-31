@@ -1,7 +1,5 @@
 package com.banknifty.recommendation.engine;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import org.springframework.stereotype.Component;
 
 import com.banknifty.analysis.MarketBias;
@@ -79,32 +77,9 @@ public class OptionChainSentimentCalculator {
 			bearish += 15;
 		}
 
-		/*
-		 * ============================================================ Max Pain
-		 * Contribution ============================================================
-		 */
-
-		if (analysis.getMaxPainStrike() != null) {
-
-			bullish += analysis.getMaxPainScore() * 0.10;
-			bearish += analysis.getMaxPainScore() * 0.10;
-		}
-
-		/*
-		 * ============================================================ Gamma
-		 * Contribution ============================================================
-		 */
-
-		bullish += analysis.getGammaExposureScore() * 0.15;
-		bearish += analysis.getGammaExposureScore() * 0.15;
-
-		/*
-		 * ============================================================ Liquidity
-		 * Contribution ============================================================
-		 */
-
-		bullish += analysis.getLiquidityScore() * 0.10;
-		bearish += analysis.getLiquidityScore() * 0.10;
+		// Max pain, gamma and liquidity describe market quality/range conditions.
+		// They are deliberately excluded from directional confidence: adding the
+		// same value to both sides used to make a neutral chain look highly certain.
 
 		/*
 		 * ============================================================ Final Bias
@@ -146,32 +121,6 @@ public class OptionChainSentimentCalculator {
 
 		analysis.setConfidence(Math.min(confidence, 100));
 
-		/*
-		 * ============================================================ IV Percentile
-		 * (Initial Approximation)
-		 * ============================================================
-		 */
-
-		if (analysis.getAverageIV() != null) {
-
-			BigDecimal iv = analysis.getAverageIV();
-
-			BigDecimal percentile = iv.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
-					.multiply(BigDecimal.valueOf(100));
-
-			analysis.setIvPercentile(percentile.min(BigDecimal.valueOf(100)));
-		}
-
-		/*
-		 * ============================================================ Institutional
-		 * Composite Score ============================================================
-		 */
-
-		double score = (analysis.getPcrScore() + analysis.getOiScore() + analysis.getMaxPainScore()
-				+ analysis.getGammaExposureScore() + analysis.getLiquidityScore() + analysis.getVolatilityScore()
-				+ analysis.getSupportResistanceScore()) / 7.0;
-
-		analysis.setInstitutionalScore(score);
 	}
 
 }

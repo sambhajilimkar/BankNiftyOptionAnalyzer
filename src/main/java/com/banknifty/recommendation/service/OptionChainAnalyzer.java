@@ -3,6 +3,7 @@ package com.banknifty.recommendation.service;
 import com.banknifty.broker.model.OptionQuote;
 import com.banknifty.config.TradingProperties;
 import com.banknifty.enums.OptionType;
+import com.banknifty.recommendation.config.TradeCandidateProperties;
 import com.banknifty.recommendation.mapper.OptionCandidateMapper;
 import com.banknifty.recommendation.model.OptionCandidate;
 import lombok.RequiredArgsConstructor;
@@ -19,11 +20,9 @@ import java.util.List;
 @Slf4j
 public class OptionChainAnalyzer {
 
-	private static final long MIN_OPEN_INTEREST = 100L;
-	private static final long MIN_VOLUME = 10L;
-
 	private final OptionCandidateMapper mapper;
 	private final TradingProperties tradingProperties;
+	private final TradeCandidateProperties candidateProperties;
 
 	public List<OptionCandidate> analyze(List<OptionQuote> optionChain, BigDecimal spotPrice) {
 
@@ -67,10 +66,20 @@ public class OptionChainAnalyzer {
 		if (quote == null || quote.strike() == null || quote.optionType() == null) {
 			return false;
 		}
-		if (quote.ltp() == null || quote.ltp().signum() <= 0) {
+		if (quote.ltp() == null || quote.ltp().signum() <= 0 || quote.bid() == null || quote.ask() == null
+				|| quote.bid().signum() <= 0 || quote.ask().compareTo(quote.bid()) < 0) {
 			return false;
 		}
-		log.info("DEBUG accepting contract {} {} LTP={} VOL={} OI={}", quote.strike(), quote.optionType(), quote.ltp(), quote.volume(), quote.openInterest());
-		return true;
+		if (quote.volume() == null || quote.volume() < candidateProperties.getMinimumVolume()
+				|| quote.openInterest() == null || quote.openInterest() < candidateProperties.getMinimumOpenInterest()) {
+			return false;
+		}
+		if (quote.ltp().doubleValue() < candidateProperties.getMinimumPremium()
+				|| quote.ltp().doubleValue() > candidateProperties.getMaximumPremium()) {
+			return false;
+		}
+		BigDecimal spreadPercent = quote.ask().subtract(quote.bid()).multiply(BigDecimal.valueOf(100))
+				.divide(quote.ltp(), 4, RoundingMode.HALF_UP);
+		return spreadPercent.doubleValue() <= candidateProperties.getMaximumSpread();
 	}
 }

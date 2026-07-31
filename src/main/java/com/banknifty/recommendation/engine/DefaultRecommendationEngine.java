@@ -84,19 +84,22 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 		InstitutionalAnalysis institutional = institutionalAnalysisEngine.analyze(snapshot, previousSnapshot,
 				AnalysisContext.builder().spotPrice(spotPrice).build());
 		snapshotHistoryService.save(snapshot);
+		if (technicalSignal.confidence() < MINIMUM_TECHNICAL_CONFIDENCE) {
+			return noTrade(normalized, spotPrice, technicalSignal, institutional,
+					"Technical confirmation is below " + MINIMUM_TECHNICAL_CONFIDENCE + "%");
+		}
 
 		int overallConfidence = (int) Math
 				.round((technicalSignal.confidence() * 0.60) + (institutional.getConfidence() * 0.40));
 
 		if (overallConfidence < 55) {
-			return noTrade(normalized, spotPrice,
-					new Signal(technicalSignal.optionType(), overallConfidence, technicalSignal.reasons()),
-					institutional, "Combined technical + institutional confidence is below 55%");
+			return noTrade(normalized, spotPrice, technicalSignal, institutional,
+					"Combined technical + institutional confidence is below 55%", overallConfidence);
 		}
 
 		if (institutionalDisagrees(technicalSignal.optionType(), institutional)) {
 			return noTrade(normalized, spotPrice, technicalSignal, institutional,
-					"Technical trend and institutional option-chain bias disagree");
+					"Technical trend and institutional option-chain bias disagree", overallConfidence);
 		}
 
 		AnalysisContext context = AnalysisContext.builder().spotPrice(spotPrice)
@@ -107,15 +110,15 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 
 		List<OptionQuote> quotes = optionUniverseService.loadUniverse(normalized);
 		List<OptionAnalysis> ranked = rankingEngine.top(optionChainAnalyzer.analyze(quotes, spotPrice).stream()
-				.filter(candidate -> candidate.getOptionType() == technicalSignal.optionType())
 				.map(candidate -> optionAnalysisEngine.analyze(context, candidate)).toList(), context, 5);
 
 		if (ranked.isEmpty()) {
 			return noTrade(normalized, spotPrice, technicalSignal, institutional,
-					"No liquid contract passed the selected expiry and risk filters");
+					"No liquid contract matched the selected expiry, risk profile, and trading style");
 		}
 
 		OptionAnalysis best = ranked.getFirst();
+		best.addReason(contractPreferenceReason(normalized));
 		return trade(normalized, spotPrice, technicalSignal, institutional, best);
 	}
 
@@ -126,17 +129,18 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 		reasons.add("Full option-chain institutional analysis confirmed the selected contract");
 		int confidence = (int) Math
 				.round(Math.min(100, (signal.confidence() * 0.55) + (institutional.getConfidence() * 0.45)));
+		TradeLevels levels = tradeLevels(best.getEntry(), request.tradingStyle(), request.riskProfile());
 
 		return TradeRecommendation.builder().action(RecommendationAction.BUY).instrument(request.instrument())
 				.expiryDate(best.getCandidate().getExpiry()).expiryLabel(request.expiryType().name())
 				.optionType(best.getCandidate().getOptionType()).strikePrice(best.getCandidate().getStrike())
 				.spotPrice(spotPrice).optionPrice(best.getCandidate().getPremium()).entryMin(best.getEntry())
-				.entryMax(best.getEntry()).stopLoss(best.getStopLoss()).target1(best.getTarget1())
-				.target2(best.getTarget2()).target3(level(best.getEntry(), 1.60)).confidence(confidence)
-				.risk(riskLevel(request.riskProfile())).quantity(positionLots(request.capital(), best.getEntry()))
+				.entryMax(best.getEntry()).stopLoss(levels.stopLoss()).target1(levels.target1())
+				.target2(levels.target2()).target3(levels.target3()).confidence(confidence)
+				.risk(riskLevel(request.riskProfile())).quantity(positionLots(request.capital(), best.getEntry(), request.riskProfile()))
 				.holdingTime(holdingTime(request.tradingStyle())).reasons(List.copyOf(reasons))
 				.rejectedReasons(List.of()).institutionalAnalysis(institutional)
-				.technicalConfidence(signal.confidence()).build();
+				.technicalConfidence(signal.confidence()).technicalBias(marketBias(signal.optionType(), signal.confidence())).build();
 	}
 
 	private boolean institutionalDisagrees(OptionType technicalDirection, InstitutionalAnalysis institutional) {
@@ -209,11 +213,17 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 
 	private TradeRecommendation noTrade(RecommendationRequest request, BigDecimal spotPrice, Signal signal,
 			InstitutionalAnalysis institutional, String rejectedReason) {
+		return noTrade(request, spotPrice, signal, institutional, rejectedReason, signal.confidence());
+	}
+
+	private TradeRecommendation noTrade(RecommendationRequest request, BigDecimal spotPrice, Signal signal,
+			InstitutionalAnalysis institutional, String rejectedReason, int recommendationConfidence) {
 		return TradeRecommendation.builder().action(RecommendationAction.WAIT).instrument(request.instrument())
 				.expiryLabel(request.expiryType().name()).spotPrice(spotPrice).optionType(null)
-				.confidence(signal.confidence()).risk(riskLevel(request.riskProfile())).quantity(0)
+				.confidence(recommendationConfidence).risk(riskLevel(request.riskProfile())).quantity(0)
 				.holdingTime("No trade").reasons(List.copyOf(signal.reasons())).rejectedReasons(List.of(rejectedReason))
-				.institutionalAnalysis(institutional).technicalConfidence(signal.confidence()).build();
+				.institutionalAnalysis(institutional).technicalConfidence(signal.confidence())
+				.technicalBias(marketBias(signal.optionType(), signal.confidence())).build();
 	}
 
 	private List<Candle> historicalCandles(String symbol) {
@@ -253,9 +263,77 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 	}
 
 	private int positionLots(Double capital, BigDecimal entry) {
+		return positionLots(capital, entry, RiskProfile.BALANCED);
+	}
+
+	private int positionLots(Double capital, BigDecimal entry, RiskProfile profile) {
 		if (capital == null || capital <= 0 || entry == null || entry.signum() <= 0)
 			return 1;
-		return Math.max(1, Math.min(5, (int) Math.floor(capital / entry.doubleValue() / 100.0)));
+		double costPerLot = entry.doubleValue() * Math.max(1, tradingProperties.getLotSize());
+		int affordableLots = (int) Math.floor(capital / costPerLot);
+		return Math.max(1, Math.min(maxLots(profile), affordableLots));
+	}
+
+	private boolean matchesTradePreferences(com.banknifty.recommendation.model.OptionCandidate candidate,
+			RecommendationRequest request) {
+		int distance = candidate.getStrikeDistance() == null ? Integer.MAX_VALUE : candidate.getStrikeDistance();
+		return switch (request.tradingStyle()) {
+		case SCALPING -> candidate.isAtm();
+		case INTRADAY -> candidate.isAtm() || (request.riskProfile() == RiskProfile.AGGRESSIVE && distance <= 1);
+		case SWING -> candidate.isItm() && distance <= preferredItmDistance(request.riskProfile(), 2);
+		case POSITIONAL -> candidate.isItm() && distance <= preferredItmDistance(request.riskProfile(), 3);
+		};
+	}
+
+	private int preferredItmDistance(RiskProfile profile, int baseDistance) {
+		return switch (profile) {
+		case CONSERVATIVE -> 1;
+		case MODERATE, BALANCED -> baseDistance;
+		case AGGRESSIVE -> baseDistance + 1;
+		};
+	}
+
+	private String contractPreferenceReason(RecommendationRequest request) {
+		return switch (request.tradingStyle()) {
+		case SCALPING -> "ATM contract selected for scalping liquidity";
+		case INTRADAY -> "Near-ATM contract selected for intraday liquidity";
+		case SWING -> "ITM contract selected for swing-trade delta and time-value protection";
+		case POSITIONAL -> "ITM contract selected for positional-trade delta and time-value protection";
+		};
+	}
+
+	private TradeLevels tradeLevels(BigDecimal entry, TradingStyle style, RiskProfile profile) {
+		double[] styleMultipliers = switch (style) {
+		case SCALPING -> new double[] { 0.95, 1.08, 1.15, 1.22 };
+		case INTRADAY -> new double[] { 0.90, 1.12, 1.25, 1.40 };
+		case SWING -> new double[] { 0.85, 1.20, 1.40, 1.60 };
+		case POSITIONAL -> new double[] { 0.80, 1.30, 1.60, 2.00 };
+		};
+		double targetAdjustment = switch (profile) {
+		case CONSERVATIVE -> -0.03;
+		case MODERATE -> -0.01;
+		case BALANCED -> 0;
+		case AGGRESSIVE -> 0.05;
+		};
+		double stopAdjustment = switch (profile) {
+		case CONSERVATIVE -> 0.03;
+		case MODERATE -> 0.01;
+		case BALANCED -> 0;
+		case AGGRESSIVE -> -0.03;
+		};
+		return new TradeLevels(level(entry, styleMultipliers[0] + stopAdjustment),
+				level(entry, styleMultipliers[1] + targetAdjustment),
+				level(entry, styleMultipliers[2] + targetAdjustment),
+				level(entry, styleMultipliers[3] + targetAdjustment));
+	}
+
+	private int maxLots(RiskProfile profile) {
+		return switch (profile) {
+		case CONSERVATIVE -> 1;
+		case MODERATE -> 2;
+		case BALANCED -> 3;
+		case AGGRESSIVE -> 5;
+		};
 	}
 
 	private String holdingTime(TradingStyle style) {
@@ -280,5 +358,8 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 	}
 
 	private record Signal(OptionType optionType, int confidence, List<String> reasons) {
+	}
+
+	private record TradeLevels(BigDecimal stopLoss, BigDecimal target1, BigDecimal target2, BigDecimal target3) {
 	}
 }

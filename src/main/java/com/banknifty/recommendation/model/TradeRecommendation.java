@@ -3,6 +3,7 @@ package com.banknifty.recommendation.model;
 import com.banknifty.enums.OptionType;
 import com.banknifty.enums.RecommendationAction;
 import com.banknifty.enums.RiskLevel;
+import com.banknifty.analysis.MarketBias;
 import lombok.Builder;
 
 import java.math.BigDecimal;
@@ -57,7 +58,9 @@ public record TradeRecommendation(
 
 		InstitutionalAnalysis institutionalAnalysis,
 
-		Integer technicalConfidence
+		Integer technicalConfidence,
+
+		MarketBias technicalBias
 
 ) {
 }

@@ -83,4 +83,5 @@ trading:
    minimum-open-interest: 5000
    maximum-spread: 2.5
    strike-step: 100
-   max-strike-distance: 200
+   max-strike-distance: 2000
+   lot-size: 30

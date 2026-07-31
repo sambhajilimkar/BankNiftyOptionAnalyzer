@@ -24,6 +24,8 @@ public class InstitutionalAnalysisEngineImpl implements InstitutionalAnalysisEng
 
 	private final SupportResistanceCalculator supportResistanceCalculator;
 
+	private final OptionChainQualityCalculator optionChainQualityCalculator;
+
 	private final OptionChainSentimentCalculator optionChainSentimentCalculator;
 
 	@Override
@@ -64,6 +66,8 @@ public class InstitutionalAnalysisEngineImpl implements InstitutionalAnalysisEng
 
 		supportResistanceCalculator.calculate(currentSnapshot, analysis);
 
+		optionChainQualityCalculator.calculate(currentSnapshot, analysis);
+
 		/*
 		 * ============================================================ MARKET SENTIMENT
 		 * ============================================================
@@ -71,26 +75,18 @@ public class InstitutionalAnalysisEngineImpl implements InstitutionalAnalysisEng
 		optionChainSentimentCalculator.calculate(currentSnapshot, analysis);
 
 		/*
-		 * ============================================================ FINAL SCORE
-		 * ============================================================
+		 * The sentiment calculator has already set confidence from the balance of
+		 * bullish versus bearish evidence. Do not overwrite it with market-quality
+		 * measures, because a liquid/high-IV market can still be directionally unclear.
 		 */
+		analysis.setInstitutionalScore(analysis.getConfidence());
+		double qualityScore = (analysis.getMaxPainScore() + analysis.getGammaExposureScore()
+				+ analysis.getSupportResistanceScore() + analysis.getLiquidityScore()
+				+ analysis.getVolatilityScore()) / 5.0;
+		analysis.setMarketQualityScore(qualityScore);
 
-		double score = 0;
-
-		score += analysis.getPcrScore();
-		score += analysis.getOiScore();
-		score += analysis.getMaxPainScore();
-		score += analysis.getGammaExposureScore();
-		score += analysis.getSupportResistanceScore();
-		score += analysis.getLiquidityScore();
-		score += analysis.getVolatilityScore();
-
-		score = score / 7.0;
-
-		analysis.setInstitutionalScore(score);
-		analysis.setConfidence(score);
-
-		log.info("Institutional Score : {}", score);
+		log.info("Institutional directional confidence: {}, market quality: {}", analysis.getConfidence(),
+				qualityScore);
 
 		return analysis;
 	}

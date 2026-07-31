@@ -45,6 +45,11 @@ public class TradingProperties {
     /**
      * Maximum distance from ATM.
      */
-    private int maxStrikeDistance = 200;
+    private int maxStrikeDistance = 2000;
+
+    /**
+     * Contracts in one BankNifty lot. Used for capital-based position sizing.
+     */
+    private int lotSize = 30;
 
 }

@@ -134,4 +134,10 @@ public class InstitutionalAnalysis {
 
 	private double institutionalScore;
 
+	/**
+	 * Quality of the tradable option-chain environment (liquidity, IV, gamma and
+	 * range structure). This is intentionally separate from directional confidence.
+	 */
+	private double marketQualityScore;
+
 }
