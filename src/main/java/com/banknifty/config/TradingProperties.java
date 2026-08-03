@@ -11,45 +11,55 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "trading")
 public class TradingProperties {
 
-    /**
-     * Minimum option premium.
-     */
-    private double minimumPremium = 50;
+	/**
+	 * Minimum option premium.
+	 */
+	private double minimumPremium = 50;
 
-    /**
-     * Maximum option premium.
-     */
-    private double maximumPremium = 400;
+	/**
+	 * Maximum option premium.
+	 */
+	private double maximumPremium = 400;
 
-    /**
-     * Minimum volume.
-     */
-    private long minimumVolume = 1000;
+	/**
+	 * Minimum traded volume.
+	 */
+	private long minimumVolume = 1000;
 
-    /**
-     * Minimum Open Interest.
-     */
-    private long minimumOpenInterest = 5000;
+	/**
+	 * Minimum Open Interest.
+	 */
+	private long minimumOpenInterest = 5000;
 
-    /**
-     * Maximum bid ask spread.
-     */
-    private double maximumSpread = 2.5;
+	/**
+	 * Maximum allowed bid-ask spread.
+	 */
+	private double maximumSpread = 2.5;
 
-    /**
-     * Strike interval.
-     * BankNifty = 100
-     */
-    private int strikeStep = 100;
+	/**
+	 * Strike interval. BANKNIFTY = 100 NIFTY = 50
+	 */
+	private int strikeStep = 100;
 
-    /**
-     * Maximum distance from ATM.
-     */
-    private int maxStrikeDistance = 2000;
+	/**
+	 * Maximum strike distance from ATM. Used for broad filtering if required.
+	 */
+	private int maxStrikeDistance = 2000;
 
-    /**
-     * Contracts in one BankNifty lot. Used for capital-based position sizing.
-     */
-    private int lotSize = 30;
+	/**
+	 * Number of strikes to analyze on each side of ATM.
+	 *
+	 * Example: strikesAroundATM = 12
+	 *
+	 * 12 ITM +1 ATM 12 OTM
+	 *
+	 * = 25 CE + 25 PE = 50 contracts
+	 */
+	private int strikesAroundATM = 12;
+
+	/**
+	 * Contracts in one BANKNIFTY lot. Used for capital-based position sizing.
+	 */
+	private int lotSize = 30;
 
 }

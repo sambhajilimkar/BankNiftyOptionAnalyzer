@@ -85,3 +85,4 @@ trading:
    strike-step: 100
    max-strike-distance: 2000
    lot-size: 30
+   strikes-around-atm: 12

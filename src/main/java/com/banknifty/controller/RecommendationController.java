@@ -6,6 +6,7 @@ import com.banknifty.enums.TradingStyle;
 import com.banknifty.recommendation.engine.RecommendationEngine;
 import com.banknifty.recommendation.model.RecommendationRequest;
 import com.banknifty.recommendation.model.TradeRecommendation;
+import com.banknifty.recommendation.model.RecommendationResponseV2;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +43,18 @@ public class RecommendationController {
 
 		return ResponseEntity.ok(recommendation);
 
+	}
+
+	@GetMapping("/v2")
+	public ResponseEntity<RecommendationResponseV2> recommendV2(
+			@RequestParam(defaultValue = "BANKNIFTY") String instrument,
+			@RequestParam(defaultValue = "WEEKLY") ExpiryType expiryType,
+			@RequestParam(defaultValue = "INTRADAY") TradingStyle tradingStyle,
+			@RequestParam(defaultValue = "BALANCED") RiskProfile riskProfile,
+			@RequestParam(required = false) Double capital) {
+		RecommendationRequest request = RecommendationRequest.builder().instrument(instrument).expiryType(expiryType)
+				.tradingStyle(tradingStyle).riskProfile(riskProfile).capital(capital).build();
+		return ResponseEntity.ok(recommendationEngine.recommendV2(request));
 	}
 
 }

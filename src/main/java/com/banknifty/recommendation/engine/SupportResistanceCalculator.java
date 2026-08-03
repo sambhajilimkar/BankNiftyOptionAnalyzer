@@ -38,8 +38,10 @@ public class SupportResistanceCalculator {
 			return;
 		}
 
-		OptionStrike callWall = strongestCallWall(calls);
-		OptionStrike putWall = strongestPutWall(puts);
+		BigDecimal spot = snapshot.spotPrice() != null ? snapshot.spotPrice()
+				: snapshot.atmStrike() == null ? null : BigDecimal.valueOf(snapshot.atmStrike());
+		OptionStrike callWall = strongestCallWall(calls, spot);
+		OptionStrike putWall = strongestPutWall(puts, spot);
 
 		if (callWall != null) {
 
@@ -57,11 +59,13 @@ public class SupportResistanceCalculator {
 	/**
 	 * Highest Institutional Call Wall
 	 */
-	private OptionStrike strongestCallWall(List<OptionStrike> calls) {
+	private OptionStrike strongestCallWall(List<OptionStrike> calls, BigDecimal spot) {
 
 		return calls.stream()
 
 				.filter(c -> c.openInterest() != null)
+				// A call wall below spot is not a forward resistance level.
+				.filter(c -> spot == null || BigDecimal.valueOf(c.strike()).compareTo(spot) >= 0)
 
 				.max(Comparator.comparingDouble(this::strength))
 
@@ -71,11 +75,13 @@ public class SupportResistanceCalculator {
 	/**
 	 * Highest Institutional Put Wall
 	 */
-	private OptionStrike strongestPutWall(List<OptionStrike> puts) {
+	private OptionStrike strongestPutWall(List<OptionStrike> puts, BigDecimal spot) {
 
 		return puts.stream()
 
 				.filter(p -> p.openInterest() != null)
+				// A put wall above spot is not a downside support level.
+				.filter(p -> spot == null || BigDecimal.valueOf(p.strike()).compareTo(spot) <= 0)
 
 				.max(Comparator.comparingDouble(this::strength))
 

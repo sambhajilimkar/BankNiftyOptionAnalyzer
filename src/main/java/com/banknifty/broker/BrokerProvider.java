@@ -17,6 +17,6 @@ public interface BrokerProvider {
 
 	LiveQuote quote(Long instrumentToken);
 
-	List<OptionQuote> optionChain(String underlying, String expiry);
+	List<OptionQuote> optionChain(String underlying, String expiry, int strikesAroundATM);
 
 }

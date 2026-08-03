@@ -6,6 +6,7 @@ import com.banknifty.enums.OptionType;
 import com.banknifty.recommendation.model.InstitutionalAnalysis;
 import com.banknifty.recommendation.model.OptionAnalysis;
 import com.banknifty.recommendation.model.OptionCandidate;
+import com.banknifty.recommendation.probability.ProbabilityEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +16,12 @@ import java.math.RoundingMode;
 @Service
 @Slf4j
 public class OptionAnalysisEngine {
+
+	private final ProbabilityEngine probabilityEngine;
+
+	public OptionAnalysisEngine(ProbabilityEngine probabilityEngine) {
+		this.probabilityEngine = probabilityEngine;
+	}
 
 	public OptionAnalysis analyze(AnalysisContext context, OptionCandidate candidate) {
 
@@ -43,6 +50,10 @@ public class OptionAnalysisEngine {
 		scoreInstitutional(institutional, candidate, analysis);
 
 		scoreRiskReward(context, candidate, analysis);
+
+		probabilityEngine.evaluate(analysis);
+
+		normalizeScore(analysis);
 
 		calculateTradeLevels(candidate, analysis);
 
@@ -493,6 +504,25 @@ public class OptionAnalysisEngine {
 		analysis.setTarget1(premium.multiply(BigDecimal.valueOf(1.20)).setScale(2, RoundingMode.HALF_UP));
 
 		analysis.setTarget2(premium.multiply(BigDecimal.valueOf(1.40)).setScale(2, RoundingMode.HALF_UP));
+	}
+
+	private void normalizeScore(OptionAnalysis analysis) {
+
+		if (analysis == null) {
+			return;
+		}
+
+		double score = analysis.getTotalScore();
+
+		if (score > 100) {
+			score = 100;
+		}
+
+		if (score < 0) {
+			score = 0;
+		}
+
+		analysis.setTotalScore(score);
 	}
 
 }

@@ -66,25 +66,38 @@ public class KiteBrokerProvider implements BrokerProvider {
 	}
 
 	@Override
-	public List<OptionQuote> optionChain(String underlying, String expiry) {
+	public List<OptionQuote> optionChain(String underlying, String expiry, int strikesAroundATM) {
+
 		BigDecimal spotPrice = spotPrice(underlying);
 		Date selectedExpiry = selectExpiry(underlying, expiry);
 
-		List<Instrument> contracts = instrumentRegistry.getOptions(underlying, selectedExpiry).stream()
+		List<Instrument> allContracts = instrumentRegistry.getOptions(underlying, selectedExpiry).stream()
 				.filter(contract -> contract.instrument_type != null)
 				.filter(contract -> contract.instrument_type.equalsIgnoreCase("CE")
 						|| contract.instrument_type.equalsIgnoreCase("PE"))
 				.sorted(Comparator.comparing(contract -> strikeDistance(contract, spotPrice))).toList();
 
-		if (contracts.isEmpty()) {
+		if (allContracts.isEmpty()) {
 			return List.of();
 		}
 
-		Map<String, Quote> quotes = completeQuotes(contracts);
+		int contractsPerSide = (strikesAroundATM * 2) + 1;
 
-		return contracts.stream()
+		List<Instrument> ceContracts = allContracts.stream()
+				.filter(contract -> "CE".equalsIgnoreCase(contract.instrument_type)).limit(contractsPerSide).toList();
+
+		List<Instrument> peContracts = allContracts.stream()
+				.filter(contract -> "PE".equalsIgnoreCase(contract.instrument_type)).limit(contractsPerSide).toList();
+
+		List<Instrument> shortlisted = new java.util.ArrayList<>(contractsPerSide * 2);
+		shortlisted.addAll(ceContracts);
+		shortlisted.addAll(peContracts);
+
+		Map<String, Quote> quotes = completeQuotes(shortlisted);
+
+		return shortlisted.stream()
 				.map(contract -> toOptionQuote(contract, quotes.get(NFO + ":" + contract.tradingsymbol), spotPrice))
-				.filter(quote -> quote.ltp().signum() > 0).toList();
+				.filter(option -> option.ltp().signum() > 0).toList();
 	}
 
 	/**
@@ -140,12 +153,12 @@ public class KiteBrokerProvider implements BrokerProvider {
 		BigDecimal ltp = quote == null ? BigDecimal.ZERO : BigDecimal.valueOf(quote.lastPrice);
 		OptionType optionType = "CE".equalsIgnoreCase(instrument.instrument_type) ? OptionType.CE : OptionType.PE;
 		OptionGreeksCalculator.Greeks greeks = OptionGreeksCalculator.calculate(spotPrice,
-				(int) Math.round(Double.parseDouble(instrument.strike)), toLocalDate(instrument.expiry), optionType, ltp);
+				(int) Math.round(Double.parseDouble(instrument.strike)), toLocalDate(instrument.expiry), optionType,
+				ltp);
 
 		return OptionQuote.builder().instrumentToken(instrument.instrument_token)
 				.tradingSymbol(instrument.tradingsymbol).strike((int) Math.round(Double.parseDouble(instrument.strike)))
-				.expiry(toLocalDate(instrument.expiry))
-				.optionType(optionType).ltp(ltp)
+				.expiry(toLocalDate(instrument.expiry)).optionType(optionType).ltp(ltp)
 				.volume(quote == null ? 0L : roundedLong(quote.volumeTradedToday))
 				.openInterest(quote == null ? 0L : roundedLong(quote.oi)).bid(bestBid(quote)).ask(bestAsk(quote))
 				.iv(greeks.iv()).delta(greeks.delta()).theta(greeks.theta()).gamma(greeks.gamma()).vega(greeks.vega())

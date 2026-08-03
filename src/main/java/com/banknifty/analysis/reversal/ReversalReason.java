@@ -1,0 +1,43 @@
+package com.banknifty.analysis.reversal;
+
+public enum ReversalReason {
+
+    RSI_BULLISH_DIVERGENCE,
+
+    RSI_BEARISH_DIVERGENCE,
+
+    MACD_BULLISH_DIVERGENCE,
+
+    MACD_BEARISH_DIVERGENCE,
+
+    ADX_WEAKENING,
+
+    VWAP_BREAKDOWN,
+
+    VWAP_BREAKOUT,
+
+    SUPPORT_BOUNCE,
+
+    RESISTANCE_REJECTION,
+
+    LONG_UNWINDING,
+
+    SHORT_COVERING,
+
+    VOLUME_EXHAUSTION,
+
+    BUYING_CLIMAX,
+
+    SELLING_CLIMAX,
+
+    HAMMER,
+
+    SHOOTING_STAR,
+
+    DOJI,
+
+    BULLISH_ENGULFING,
+
+    BEARISH_ENGULFING
+
+}

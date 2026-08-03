@@ -1,0 +1,27 @@
+package com.banknifty.market.state;
+
+public enum MarketState {
+
+	STRONG_BULLISH,
+
+	BULLISH,
+
+	BULLISH_EXHAUSTION,
+
+	BREAKOUT,
+
+	ACCUMULATION,
+
+	RANGE_BOUND,
+
+	DISTRIBUTION,
+
+	BREAKDOWN,
+
+	BEARISH_EXHAUSTION,
+
+	BEARISH,
+
+	STRONG_BEARISH
+
+}

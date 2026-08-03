@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import com.banknifty.analysis.IndicatorPipeline;
 import com.banknifty.analysis.MarketBias;
 import com.banknifty.analysis.context.AnalysisContext;
+import com.banknifty.backtest.service.BacktestService;
 import com.banknifty.broker.model.OptionQuote;
 import com.banknifty.config.TradingProperties;
 import com.banknifty.enums.OptionType;
@@ -19,6 +20,10 @@ import com.banknifty.enums.RiskLevel;
 import com.banknifty.enums.RiskProfile;
 import com.banknifty.enums.TradingStyle;
 import com.banknifty.indicator.result.IndicatorSnapshot;
+import com.banknifty.market.context.MarketContextService;
+import com.banknifty.market.context.MarketContext;
+import com.banknifty.market.regime.MarketRegimeResult;
+import com.banknifty.market.regime.MarketRegimeEngine;
 import com.banknifty.model.Candle;
 import com.banknifty.optionchain.history.OptionSnapshotHistoryService;
 import com.banknifty.optionchain.model.OptionSnapshot;
@@ -31,7 +36,24 @@ import com.banknifty.recommendation.model.InstitutionalAnalysis;
 import com.banknifty.recommendation.model.OptionAnalysis;
 import com.banknifty.recommendation.model.RecommendationRequest;
 import com.banknifty.recommendation.model.TradeRecommendation;
+import com.banknifty.recommendation.model.RecommendationResponseV2;
+import com.banknifty.recommendation.model.RankedContract;
+import com.banknifty.recommendation.model.RejectedContract;
+import com.banknifty.recommendation.model.MarketSummary;
+import com.banknifty.recommendation.model.RiskPlan;
+import com.banknifty.recommendation.model.ScoreBreakdown;
+import com.banknifty.recommendation.model.StrikeCandidate;
+import com.banknifty.recommendation.model.DecisionContext;
+import com.banknifty.recommendation.model.TradeSetup;
+import com.banknifty.recommendation.model.WinnerExplanation;
+import com.banknifty.recommendation.model.PortfolioAllocation;
+import com.banknifty.recommendation.model.AllocationLeg;
 import com.banknifty.recommendation.service.OptionChainAnalyzer;
+import com.banknifty.recommendation.validation.RecommendationValidationService;
+import com.banknifty.recommendation.RecommendationAggregator;
+import com.banknifty.recommendation.TradeSetupBuilder;
+import com.banknifty.service.TrendAnalysisService;
+import com.banknifty.service.TrendAnalysisResult;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
 
 import lombok.RequiredArgsConstructor;
@@ -64,6 +86,13 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 	private final OptionChainAnalyzer optionChainAnalyzer;
 	private final OptionAnalysisEngine optionAnalysisEngine;
 	private final RankingEngine rankingEngine;
+	private final MarketContextService marketContextService;
+	private final MarketRegimeEngine marketRegimeEngine;
+	private final TrendAnalysisService trendAnalysisService;
+	private final TradeSetupBuilder tradeSetupBuilder;
+	private final RecommendationAggregator recommendationAggregator;
+	private final RecommendationValidationService validationService;
+	private final BacktestService backtestService;
 
 	@Override
 	public TradeRecommendation recommend(RecommendationRequest request) {
@@ -110,6 +139,8 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 
 		List<OptionQuote> quotes = optionUniverseService.loadUniverse(normalized);
 		List<OptionAnalysis> ranked = rankingEngine.top(optionChainAnalyzer.analyze(quotes, spotPrice).stream()
+				.filter(candidate -> candidate.getOptionType() == technicalSignal.optionType())
+				.filter(candidate -> matchesTradePreferences(candidate, normalized))
 				.map(candidate -> optionAnalysisEngine.analyze(context, candidate)).toList(), context, 5);
 
 		if (ranked.isEmpty()) {
@@ -120,6 +151,92 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 		OptionAnalysis best = ranked.getFirst();
 		best.addReason(contractPreferenceReason(normalized));
 		return trade(normalized, spotPrice, technicalSignal, institutional, best);
+	}
+
+	@Override
+	public RecommendationResponseV2 recommendV2(RecommendationRequest request) {
+		RecommendationRequest normalized = normalize(request);
+		List<Candle> candles = historicalCandles(spotSymbol(normalized.instrument()));
+		IndicatorSnapshot indicators = indicatorPipeline.calculate(candles);
+		Signal signal = signal(indicators);
+		TrendAnalysisResult structure = trendAnalysisService.analyze(candles);
+		MarketContext marketContext = marketContextService.analyse();
+		MarketRegimeResult regime = marketRegimeEngine.detect(indicators, marketContext);
+		BigDecimal spot = liveSpotPrice(spotSymbol(normalized.instrument()));
+		OptionSnapshot snapshot = optionSnapshotService.getLatestSnapshot(normalized, spot);
+		InstitutionalAnalysis institutional = snapshot == null ? null
+				: institutionalAnalysisEngine.analyze(snapshot,
+						snapshotHistoryService.latestMatching(snapshot.underlying(), snapshot.expiry()).orElse(null),
+						AnalysisContext.builder().spotPrice(spot).build());
+		if (institutional == null) {
+			TradeRecommendation noTrade = noTrade(normalized, spot, signal, null,
+					"Live option-chain snapshot is unavailable for final V2 ranking");
+			return recommendationAggregator.aggregate(noTrade, List.of(), List.of(),
+					marketSummary(noTrade, regime, structure), null, null, new PortfolioAllocation(List.of(), 100),
+					null, "No recommendation recorded: option-chain confirmation was unavailable.");
+		}
+		int combinedConfidence = (int) Math.round(signal.confidence() * .60 + institutional.getConfidence() * .40);
+		boolean entryAllowed = regime.tradeAllowed() && signal.confidence() >= MINIMUM_TECHNICAL_CONFIDENCE
+				&& combinedConfidence >= 55 && !institutionalDisagrees(signal.optionType(), institutional);
+		String gateReason = !regime.tradeAllowed() ? "Market regime/context blocks new entries: " + regimeReason(regime)
+				: signal.confidence() < MINIMUM_TECHNICAL_CONFIDENCE
+						? "Technical confirmation is below " + MINIMUM_TECHNICAL_CONFIDENCE + "%"
+						: combinedConfidence < 55 ? "Combined technical + institutional confidence is below 55%"
+								: institutionalDisagrees(signal.optionType(), institutional)
+										? "Technical trend and institutional option-chain bias disagree"
+										: "Awaiting ranking and trade setup validation";
+		TradeRecommendation winner = noTrade(normalized, spot, signal, institutional, gateReason, combinedConfidence);
+		MarketSummary summary = marketSummary(winner, regime, structure);
+
+		// Ranking is independent from the executable-winner decision. It runs even
+		// when entry gates are closed so Top 5 and rejections remain observable.
+		AnalysisContext context = AnalysisContext.builder().spotPrice(spot)
+				.marketBias(marketBias(signal.optionType(), signal.confidence()))
+				.trendScore(signal.optionType() == OptionType.CE ? signal.confidence() : -signal.confidence())
+				.confidence(signal.confidence()).institutionalAnalysis(institutional).build();
+		List<OptionAnalysis> all = optionChainAnalyzer.analyze(optionUniverseService.loadUniverse(normalized), spot)
+				.stream().map(candidate -> optionAnalysisEngine.analyze(context, candidate)).toList();
+		// The Top 5 is a true cross-chain leaderboard. Directional filtering is applied
+		// only when selecting an executable winner, not when displaying analysis.
+		List<OptionAnalysis> eligible = all.stream().filter(a -> matchesTradePreferences(a.getCandidate(), normalized))
+				.toList();
+		List<OptionAnalysis> validatedEligible = validationService.validateRecommendations(context, eligible);
+
+		List<OptionAnalysis> ranked = rankingEngine.top(validatedEligible, context, 5);
+		List<RankedContract> top = ranked.stream().map(this::rankedContract).toList();
+		List<RejectedContract> rejected = all.stream().filter(a -> !validatedEligible.contains(a)).limit(20)
+				.map(a -> rejectedContract(a, signal.optionType(), normalized)).toList();
+		OptionAnalysis directionalBest = ranked.stream()
+				.filter(a -> a.getCandidate().getOptionType() == signal.optionType()).findFirst().orElse(null);
+		if (ranked.isEmpty() || (entryAllowed && directionalBest == null)) {
+			TradeRecommendation noTrade = noTrade(normalized, spot, signal, institutional,
+					"No eligible contract remained after direction, liquidity, and trade-style filtering");
+			return recommendationAggregator.aggregate(noTrade, top, rejected, marketSummary(noTrade, regime, structure),
+					null, null, new PortfolioAllocation(List.of(), 100), null,
+					"No recommendation recorded: no contract passed the final ranking filters.");
+		}
+		DecisionContext decisionContext = DecisionContext.builder().request(normalized).indicators(indicators)
+				.candles(candles).marketContext(marketContext).regime(regime).trendAnalysis(structure).build();
+		TradeSetup tradeSetup = directionalBest == null ? null
+				: tradeSetupBuilder.build(decisionContext, strikeCandidate(directionalBest));
+		entryAllowed = entryAllowed && tradeSetup != null && tradeSetup.tradable();
+		if (entryAllowed) {
+			winner = trade(normalized, spot, signal, institutional, directionalBest);
+			backtestService.saveRecommendation(directionalBest);
+		} else if (winner.action() == RecommendationAction.BUY) {
+			winner = noTrade(normalized, spot, signal, institutional,
+					tradeSetup == null ? "No directional contract matched the detected setup"
+							: "Trade setup rejected: " + String.join("; ", tradeSetup.rejectedReasons()));
+		}
+		summary = marketSummary(winner, regime, structure);
+		WinnerExplanation explanation = entryAllowed ? winnerExplanation(directionalBest, tradeSetup) : null;
+		PortfolioAllocation allocation = portfolioAllocation(entryAllowed ? winner : null, top,
+				normalized.riskProfile());
+		return recommendationAggregator.aggregate(winner, top, rejected, summary, tradeSetup, explanation, allocation,
+				entryAllowed ? riskPlan(winner, normalized.capital()) : null,
+				entryAllowed
+						? "Winner emitted; persist this response with outcome prices to enable backtesting and learning."
+						: "No executable winner: rankings are informational until market-entry gates are met.");
 	}
 
 	private TradeRecommendation trade(RecommendationRequest request, BigDecimal spotPrice, Signal signal,
@@ -137,10 +254,160 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 				.spotPrice(spotPrice).optionPrice(best.getCandidate().getPremium()).entryMin(best.getEntry())
 				.entryMax(best.getEntry()).stopLoss(levels.stopLoss()).target1(levels.target1())
 				.target2(levels.target2()).target3(levels.target3()).confidence(confidence)
-				.risk(riskLevel(request.riskProfile())).quantity(positionLots(request.capital(), best.getEntry(), request.riskProfile()))
+				.risk(riskLevel(request.riskProfile()))
+				.quantity(positionLots(request.capital(), best.getEntry(), request.riskProfile()))
 				.holdingTime(holdingTime(request.tradingStyle())).reasons(List.copyOf(reasons))
 				.rejectedReasons(List.of()).institutionalAnalysis(institutional)
-				.technicalConfidence(signal.confidence()).technicalBias(marketBias(signal.optionType(), signal.confidence())).build();
+				.technicalConfidence(signal.confidence())
+				.technicalBias(marketBias(signal.optionType(), signal.confidence())).build();
+	}
+
+	private RankedContract rankedContract(OptionAnalysis analysis) {
+		var candidate = analysis.getCandidate();
+		return new RankedContract(analysis.getRank(), candidate.getTradingSymbol(), candidate.getExpiry(),
+				candidate.getOptionType(), candidate.getStrike(), candidate.getPremium(), analysis.getTotalScore(),
+				analysis.getConfidence(), analysis.getEntry(), analysis.getStopLoss(), analysis.getTarget1(),
+				analysis.getTarget2(), grade(analysis.getTotalScore()), scoreBreakdown(analysis),
+				List.copyOf(analysis.getReasons()));
+	}
+
+	private ScoreBreakdown scoreBreakdown(OptionAnalysis analysis) {
+		double technical = percent(
+				analysis.getTrendScore() + analysis.getSupportResistanceScore() + analysis.getPivotScore(), 35);
+		double setup = percent(analysis.getStrikeScore() + analysis.getExpiryScore() + analysis.getVolatilityScore(),
+				25);
+		return new ScoreBreakdown(technical, setup, percent(analysis.getOpenInterestScore(), 10),
+				percent(analysis.getGreekScore(), 5), percent(analysis.getLiquidityScore(), 12),
+				percent(analysis.getRiskRewardScore(), 5), analysis.getTotalScore(), analysis.getTrendScore(),
+				analysis.getSupportResistanceScore(), analysis.getPivotScore(), analysis.getStrikeScore(),
+				analysis.getExpiryScore(), analysis.getVolatilityScore());
+	}
+
+	private double percent(double value, double maximum) {
+		return Math.round(Math.min(100, value * 100 / maximum) * 10.0) / 10.0;
+	}
+
+	private String grade(double score) {
+		if (score >= 95)
+			return "A+";
+		if (score >= 90)
+			return "A";
+		if (score >= 85)
+			return "B+";
+		if (score >= 80)
+			return "B";
+		return "C";
+	}
+
+	private WinnerExplanation winnerExplanation(OptionAnalysis winner, TradeSetup setup) {
+		ScoreBreakdown score = scoreBreakdown(winner);
+		List<String> highlights = new ArrayList<>();
+		highlights.add("Highest eligible setup score: " + setup.safeScore());
+		if (score.openInterest() >= 70)
+			highlights.add("Strong OI confirmation");
+		if (score.liquidity() >= 70)
+			highlights.add("High liquidity and tight execution quality");
+		if (score.riskReward() >= 70)
+			highlights.add("Favourable risk/reward profile");
+		var candidate = winner.getCandidate();
+		if (candidate.getSpreadPercentage() != null && candidate.getSpreadPercentage().doubleValue() <= 1)
+			highlights.add("Low bid-ask spread");
+		return new WinnerExplanation(grade(winner.getTotalScore()), winner.getTotalScore(), List.copyOf(highlights));
+	}
+
+	private PortfolioAllocation portfolioAllocation(TradeRecommendation winner, List<RankedContract> top,
+			RiskProfile profile) {
+		if (winner == null || winner.action() != RecommendationAction.BUY)
+			return new PortfolioAllocation(List.of(), 100);
+		int deployed = switch (profile) {
+		case CONSERVATIVE -> 40;
+		case MODERATE -> 50;
+		case BALANCED -> 60;
+		case AGGRESSIVE -> 75;
+		};
+		List<RankedContract> sameDirection = top.stream().filter(c -> c.optionType() == winner.optionType()).limit(2)
+				.toList();
+		if (sameDirection.isEmpty())
+			return new PortfolioAllocation(List.of(), 100);
+		int first = sameDirection.size() == 1 ? deployed : (int) Math.round(deployed * .60);
+		List<AllocationLeg> legs = new ArrayList<>();
+		legs.add(new AllocationLeg(sameDirection.getFirst().tradingSymbol(), sameDirection.getFirst().optionType(),
+				sameDirection.getFirst().strikePrice(), first, "Primary winner"));
+		if (sameDirection.size() > 1) {
+			RankedContract second = sameDirection.get(1);
+			legs.add(new AllocationLeg(second.tradingSymbol(), second.optionType(), second.strikePrice(),
+					deployed - first, "Secondary high-quality contract"));
+		}
+		return new PortfolioAllocation(List.copyOf(legs), 100 - deployed);
+	}
+
+	private StrikeCandidate strikeCandidate(OptionAnalysis analysis) {
+		var candidate = analysis.getCandidate();
+		return StrikeCandidate.builder().tradingSymbol(candidate.getTradingSymbol())
+				.instrumentToken(candidate.getInstrumentToken()).strike(candidate.getStrike())
+				.optionType(candidate.getOptionType()).ltp(candidate.getPremium())
+				.openInterest(candidate.getOpenInterest()).volume(candidate.getVolume()).iv(candidate.getIv())
+				.delta(candidate.getDelta()).theta(candidate.getTheta()).gamma(candidate.getGamma())
+				.vega(candidate.getVega()).build();
+	}
+
+	private RejectedContract rejectedContract(OptionAnalysis analysis, OptionType expectedType,
+			RecommendationRequest request) {
+		var candidate = analysis.getCandidate();
+		String reason = candidate.getOptionType() != expectedType
+				? "Direction conflicts with the confirmed " + expectedType + " market setup"
+				: "Does not match " + request.tradingStyle().name().toLowerCase() + " strike preference";
+		return new RejectedContract(candidate.getTradingSymbol(), candidate.getOptionType(), candidate.getStrike(),
+				reason);
+	}
+
+	private MarketSummary marketSummary(TradeRecommendation recommendation, MarketRegimeResult regime,
+			TrendAnalysisResult structure) {
+		InstitutionalAnalysis institutional = recommendation.institutionalAnalysis();
+		return new MarketSummary(recommendation.spotPrice(), recommendation.technicalBias(),
+				recommendation.technicalConfidence() == null ? 0 : recommendation.technicalConfidence(),
+				institutional == null ? null : institutional.getMarketBias(),
+				institutional == null ? 0 : institutional.getConfidence(), regime == null ? null : regime.regime(),
+				institutional == null ? null : institutional.getPutCallRatio(),
+				institutional == null ? null : institutional.getMaxPainStrike(),
+				institutional == null ? null : institutional.getStrongestSupportStrike(),
+				institutional == null ? null : institutional.getStrongestResistanceStrike(), setup(structure));
+	}
+
+	private String setup(TrendAnalysisResult structure) {
+		if (structure == null)
+			return "UNKNOWN";
+		if (structure.breakout())
+			return "BREAKOUT";
+		if (structure.breakdown())
+			return "BREAKDOWN";
+		if (structure.nearSupport() || structure.nearResistance())
+			return "PULLBACK";
+		return structure.action() == RecommendationAction.BUY ? "TREND_CONTINUATION" : "NO_CONFIRMED_SETUP";
+	}
+
+	private String regimeReason(MarketRegimeResult regime) {
+		return regime == null || regime.reasons() == null || regime.reasons().isEmpty() ? "regime not confirmed"
+				: regime.reasons().getFirst();
+	}
+
+	private RiskPlan riskPlan(TradeRecommendation recommendation, Double capital) {
+		if (recommendation.action() != RecommendationAction.BUY || recommendation.entryMin() == null
+				|| recommendation.stopLoss() == null || recommendation.target1() == null) {
+			return null;
+		}
+		int lots = Math.max(1, recommendation.quantity());
+		BigDecimal entry = recommendation.entryMin();
+		BigDecimal riskPerLot = entry.subtract(recommendation.stopLoss())
+				.multiply(BigDecimal.valueOf(tradingProperties.getLotSize())).setScale(2, RoundingMode.HALF_UP);
+		BigDecimal allocation = entry.multiply(BigDecimal.valueOf(tradingProperties.getLotSize()))
+				.multiply(BigDecimal.valueOf(lots)).setScale(2, RoundingMode.HALF_UP);
+		BigDecimal loss = riskPerLot.multiply(BigDecimal.valueOf(lots)).setScale(2, RoundingMode.HALF_UP);
+		BigDecimal reward = recommendation.target1().subtract(entry);
+		BigDecimal ratio = entry.subtract(recommendation.stopLoss()).signum() <= 0 ? BigDecimal.ZERO
+				: reward.divide(entry.subtract(recommendation.stopLoss()), 2, RoundingMode.HALF_UP);
+		return new RiskPlan(entry, recommendation.stopLoss(), recommendation.target1(), recommendation.target2(),
+				riskPerLot, allocation, loss, ratio, lots, lots * tradingProperties.getLotSize());
 	}
 
 	private boolean institutionalDisagrees(OptionType technicalDirection, InstitutionalAnalysis institutional) {
