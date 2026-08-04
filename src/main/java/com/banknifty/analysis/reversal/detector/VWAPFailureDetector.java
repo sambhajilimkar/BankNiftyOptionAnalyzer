@@ -15,64 +15,96 @@ import com.banknifty.indicator.result.VWAPResult;
 @Component
 public class VWAPFailureDetector implements ReversalDetector {
 
-    private static final BigDecimal FAILURE_DISTANCE = BigDecimal.valueOf(0.30);
+	/**
+	 * Price almost touching VWAP.
+	 */
+	private static final BigDecimal NEAR_VWAP = BigDecimal.valueOf(0.30);
 
-    @Override
-    public void detect(ReversalContext context,
-                       ReversalResult result) {
+	/**
+	 * Price clearly away from VWAP.
+	 */
+	private static final BigDecimal STRONG_DISTANCE = BigDecimal.valueOf(1.00);
 
-        IndicatorSnapshot snapshot = context.getIndicators();
+	@Override
+	public void detect(ReversalContext context, ReversalResult result) {
 
-        if (snapshot == null) {
-            return;
-        }
+		if (context == null || context.getIndicators() == null) {
+			return;
+		}
 
-        VWAPResult vwap = snapshot.vwap();
+		IndicatorSnapshot snapshot = context.getIndicators();
 
-        if (vwap == null) {
-            return;
-        }
+		VWAPResult vwap = snapshot.vwap();
 
-        /*
-         * Price attempted a breakout but
-         * remained very close to VWAP.
-         */
-        if (vwap.breakout()
-                && vwap.distance() != null
-                && vwap.distance().abs().compareTo(FAILURE_DISTANCE) <= 0) {
+		if (vwap == null || vwap.distance() == null) {
+			return;
+		}
 
-            result.addScore(12);
+		BigDecimal distance = vwap.distance().abs();
 
-            if (vwap.aboveVWAP()) {
-                result.setDirection(ReversalDirection.BEARISH);
-            } else {
-                result.setDirection(ReversalDirection.BULLISH);
-            }
+		/*
+		 * ---------------------------------------------------- Failed breakout near
+		 * VWAP ----------------------------------------------------
+		 */
+		if (vwap.breakout() && distance.compareTo(NEAR_VWAP) <= 0) {
 
-            result.addReason(ReversalReason.VWAP_BREAKDOWN);
+			result.addScore(15);
 
-            return;
-        }
+			if (vwap.aboveVWAP()) {
 
-        /*
-         * Healthy pullback to VWAP.
-         */
-        if (vwap.pullback()) {
+				result.setDirection(ReversalDirection.BEARISH);
 
-            result.addScore(5);
+			} else {
 
-            if (vwap.aboveVWAP()) {
+				result.setDirection(ReversalDirection.BULLISH);
+			}
 
-                result.setDirection(ReversalDirection.BULLISH);
+			result.addReason(ReversalReason.VWAP_BREAKDOWN);
 
-                result.addReason(ReversalReason.VWAP_BREAKOUT);
+			return;
+		}
 
-            } else {
+		/*
+		 * ---------------------------------------------------- Healthy pullback
+		 * ----------------------------------------------------
+		 */
+		if (vwap.pullback()) {
 
-                result.setDirection(ReversalDirection.BEARISH);
+			result.addScore(8);
 
-                result.addReason(ReversalReason.VWAP_BREAKDOWN);
-            }
-        }
-    }
+			if (vwap.aboveVWAP()) {
+
+				result.setDirection(ReversalDirection.BULLISH);
+
+				result.addReason(ReversalReason.VWAP_BREAKOUT);
+
+			} else {
+
+				result.setDirection(ReversalDirection.BEARISH);
+
+				result.addReason(ReversalReason.VWAP_BREAKDOWN);
+			}
+
+			return;
+		}
+
+		/*
+		 * ---------------------------------------------------- Trend extended far away
+		 * from VWAP. Increased probability of mean reversion.
+		 * ----------------------------------------------------
+		 */
+		if (distance.compareTo(STRONG_DISTANCE) >= 0) {
+
+			result.addScore(5);
+
+			if (vwap.aboveVWAP()) {
+
+				result.setDirection(ReversalDirection.BEARISH);
+
+			} else {
+
+				result.setDirection(ReversalDirection.BULLISH);
+			}
+		}
+	}
 }

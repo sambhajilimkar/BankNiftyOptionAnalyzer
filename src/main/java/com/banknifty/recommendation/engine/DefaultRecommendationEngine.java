@@ -11,6 +11,9 @@ import org.springframework.stereotype.Service;
 import com.banknifty.analysis.IndicatorPipeline;
 import com.banknifty.analysis.MarketBias;
 import com.banknifty.analysis.context.AnalysisContext;
+import com.banknifty.analysis.reversal.MarketReversalEngine;
+import com.banknifty.analysis.reversal.ReversalAnalysis;
+import com.banknifty.analysis.reversal.ReversalContext;
 import com.banknifty.backtest.service.BacktestService;
 import com.banknifty.broker.model.OptionQuote;
 import com.banknifty.config.TradingProperties;
@@ -58,6 +61,9 @@ import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.banknifty.analysis.prediction.PredictionAnalysis;
+import com.banknifty.analysis.prediction.PredictionContext;
+import com.banknifty.analysis.prediction.PredictionEngine;
 
 /**
  * Produces a trade only when technical momentum and full option-chain analysis
@@ -93,6 +99,8 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 	private final RecommendationAggregator recommendationAggregator;
 	private final RecommendationValidationService validationService;
 	private final BacktestService backtestService;
+	private final MarketReversalEngine marketReversalEngine;
+	private final PredictionEngine predictionEngine;
 
 	@Override
 	public TradeRecommendation recommend(RecommendationRequest request) {
@@ -155,85 +163,256 @@ public class DefaultRecommendationEngine implements RecommendationEngine {
 
 	@Override
 	public RecommendationResponseV2 recommendV2(RecommendationRequest request) {
+
 		RecommendationRequest normalized = normalize(request);
+
 		List<Candle> candles = historicalCandles(spotSymbol(normalized.instrument()));
+
 		IndicatorSnapshot indicators = indicatorPipeline.calculate(candles);
+
 		Signal signal = signal(indicators);
+
 		TrendAnalysisResult structure = trendAnalysisService.analyze(candles);
+
 		MarketContext marketContext = marketContextService.analyse();
+
 		MarketRegimeResult regime = marketRegimeEngine.detect(indicators, marketContext);
+
 		BigDecimal spot = liveSpotPrice(spotSymbol(normalized.instrument()));
+
 		OptionSnapshot snapshot = optionSnapshotService.getLatestSnapshot(normalized, spot);
+
 		InstitutionalAnalysis institutional = snapshot == null ? null
 				: institutionalAnalysisEngine.analyze(snapshot,
 						snapshotHistoryService.latestMatching(snapshot.underlying(), snapshot.expiry()).orElse(null),
 						AnalysisContext.builder().spotPrice(spot).build());
+
 		if (institutional == null) {
+
 			TradeRecommendation noTrade = noTrade(normalized, spot, signal, null,
 					"Live option-chain snapshot is unavailable for final V2 ranking");
-			return recommendationAggregator.aggregate(noTrade, List.of(), List.of(),
-					marketSummary(noTrade, regime, structure), null, null, new PortfolioAllocation(List.of(), 100),
-					null, "No recommendation recorded: option-chain confirmation was unavailable.");
-		}
-		int combinedConfidence = (int) Math.round(signal.confidence() * .60 + institutional.getConfidence() * .40);
-		boolean entryAllowed = regime.tradeAllowed() && signal.confidence() >= MINIMUM_TECHNICAL_CONFIDENCE
-				&& combinedConfidence >= 55 && !institutionalDisagrees(signal.optionType(), institutional);
-		String gateReason = !regime.tradeAllowed() ? "Market regime/context blocks new entries: " + regimeReason(regime)
-				: signal.confidence() < MINIMUM_TECHNICAL_CONFIDENCE
-						? "Technical confirmation is below " + MINIMUM_TECHNICAL_CONFIDENCE + "%"
-						: combinedConfidence < 55 ? "Combined technical + institutional confidence is below 55%"
-								: institutionalDisagrees(signal.optionType(), institutional)
-										? "Technical trend and institutional option-chain bias disagree"
-										: "Awaiting ranking and trade setup validation";
-		TradeRecommendation winner = noTrade(normalized, spot, signal, institutional, gateReason, combinedConfidence);
-		MarketSummary summary = marketSummary(winner, regime, structure);
 
-		// Ranking is independent from the executable-winner decision. It runs even
-		// when entry gates are closed so Top 5 and rejections remain observable.
+			return recommendationAggregator.aggregate(
+			        noTrade,
+			        List.of(),
+			        List.of(),
+			        marketSummary(noTrade, regime, structure),
+			        null,
+			        null,
+			        new PortfolioAllocation(List.of(), 100),
+			        null,
+			        null,
+			        null,
+			        "No recommendation recorded: option-chain confirmation was unavailable.");}
+
 		AnalysisContext context = AnalysisContext.builder().spotPrice(spot)
 				.marketBias(marketBias(signal.optionType(), signal.confidence()))
 				.trendScore(signal.optionType() == OptionType.CE ? signal.confidence() : -signal.confidence())
 				.confidence(signal.confidence()).institutionalAnalysis(institutional).build();
+
+		ReversalAnalysis reversal = marketReversalEngine.analyze(
+
+				ReversalContext.builder().candles(candles).indicators(indicators).analysisContext(context).build());
+
+		PredictionAnalysis prediction = predictionEngine.predict(
+
+				PredictionContext.builder().candles(candles).indicators(indicators).analysisContext(context).build(),
+
+				reversal);
+
+		int combinedConfidence = (int) Math.round(
+
+				signal.confidence() * .60
+
+						+
+
+						institutional.getConfidence() * .40);
+
+		combinedConfidence -= (int) (reversal.getReversalProbability() * 0.25);
+
+		combinedConfidence = Math.max(0, combinedConfidence);
+
+		boolean entryAllowed = regime.tradeAllowed() && signal.confidence() >= MINIMUM_TECHNICAL_CONFIDENCE
+				&& combinedConfidence >= 55 && !institutionalDisagrees(signal.optionType(), institutional);
+
+		if (reversal.getReversalProbability() >= 75) {
+
+			entryAllowed = false;
+
+		}
+
+		String gateReason = !regime.tradeAllowed()
+
+				? "Market regime/context blocks new entries: " + regimeReason(regime)
+
+				: signal.confidence() < MINIMUM_TECHNICAL_CONFIDENCE
+
+						? "Technical confirmation is below " + MINIMUM_TECHNICAL_CONFIDENCE + "%"
+
+						: combinedConfidence < 55
+
+								? "Combined technical + institutional confidence is below 55%"
+
+								: reversal.getReversalProbability() >= 75
+
+										? "High probability of market reversal ("
+												+ Math.round(reversal.getReversalProbability()) + "%)"
+
+										: institutionalDisagrees(signal.optionType(), institutional)
+
+												? "Technical trend and institutional option-chain bias disagree"
+
+												: "Awaiting ranking and trade setup validation";
+
+		TradeRecommendation winner = noTrade(normalized, spot, signal, institutional, gateReason, combinedConfidence);
+
+		MarketSummary summary = marketSummary(winner, regime, structure);
+
+		/*
+		 * --------------------------------------------------------- Analyse the
+		 * complete option universe.
+		 * ---------------------------------------------------------
+		 */
 		List<OptionAnalysis> all = optionChainAnalyzer.analyze(optionUniverseService.loadUniverse(normalized), spot)
 				.stream().map(candidate -> optionAnalysisEngine.analyze(context, candidate)).toList();
-		// The Top 5 is a true cross-chain leaderboard. Directional filtering is applied
-		// only when selecting an executable winner, not when displaying analysis.
+
+		/*
+		 * --------------------------------------------------------- Apply user
+		 * preference filters. ---------------------------------------------------------
+		 */
 		List<OptionAnalysis> eligible = all.stream().filter(a -> matchesTradePreferences(a.getCandidate(), normalized))
 				.toList();
+
+		/*
+		 * --------------------------------------------------------- Validation
+		 * ---------------------------------------------------------
+		 */
 		List<OptionAnalysis> validatedEligible = validationService.validateRecommendations(context, eligible);
 
+		/*
+		 * --------------------------------------------------------- Final Ranking
+		 * ---------------------------------------------------------
+		 */
 		List<OptionAnalysis> ranked = rankingEngine.top(validatedEligible, context, 5);
+
+		/*
+		 * --------------------------------------------------------- Top Contracts
+		 * ---------------------------------------------------------
+		 */
 		List<RankedContract> top = ranked.stream().map(this::rankedContract).toList();
+
+		/*
+		 * --------------------------------------------------------- Rejected Contracts
+		 * ---------------------------------------------------------
+		 */
 		List<RejectedContract> rejected = all.stream().filter(a -> !validatedEligible.contains(a)).limit(20)
 				.map(a -> rejectedContract(a, signal.optionType(), normalized)).toList();
+
+		/*
+		 * --------------------------------------------------------- Best contract
+		 * matching technical direction
+		 * ---------------------------------------------------------
+		 */
 		OptionAnalysis directionalBest = ranked.stream()
 				.filter(a -> a.getCandidate().getOptionType() == signal.optionType()).findFirst().orElse(null);
+
+		/*
+		 * --------------------------------------------------------- Nothing tradable
+		 * ---------------------------------------------------------
+		 */
 		if (ranked.isEmpty() || (entryAllowed && directionalBest == null)) {
+
 			TradeRecommendation noTrade = noTrade(normalized, spot, signal, institutional,
 					"No eligible contract remained after direction, liquidity, and trade-style filtering");
+
 			return recommendationAggregator.aggregate(noTrade, top, rejected, marketSummary(noTrade, regime, structure),
-					null, null, new PortfolioAllocation(List.of(), 100), null,
+					null, null, new PortfolioAllocation(List.of(), 100), null, prediction, reversal,
 					"No recommendation recorded: no contract passed the final ranking filters.");
 		}
+
+		/*
+		 * --------------------------------------------------------- Build trade setup
+		 * ---------------------------------------------------------
+		 */
 		DecisionContext decisionContext = DecisionContext.builder().request(normalized).indicators(indicators)
 				.candles(candles).marketContext(marketContext).regime(regime).trendAnalysis(structure).build();
+
 		TradeSetup tradeSetup = directionalBest == null ? null
 				: tradeSetupBuilder.build(decisionContext, strikeCandidate(directionalBest));
+
 		entryAllowed = entryAllowed && tradeSetup != null && tradeSetup.tradable();
+
+		/*
+		 * --------------------------------------------------------- Final
+		 * Recommendation ---------------------------------------------------------
+		 */
 		if (entryAllowed) {
+
 			winner = trade(normalized, spot, signal, institutional, directionalBest);
+
 			backtestService.saveRecommendation(directionalBest);
+
 		} else if (winner.action() == RecommendationAction.BUY) {
+
 			winner = noTrade(normalized, spot, signal, institutional,
-					tradeSetup == null ? "No directional contract matched the detected setup"
+
+					tradeSetup == null
+
+							? "No directional contract matched the detected setup"
+
 							: "Trade setup rejected: " + String.join("; ", tradeSetup.rejectedReasons()));
 		}
+
+		/*
+		 * --------------------------------------------------------- Refresh Summary
+		 * ---------------------------------------------------------
+		 */
 		summary = marketSummary(winner, regime, structure);
+
+		/*
+		 * --------------------------------------------------------- Winner Explanation
+		 * ---------------------------------------------------------
+		 */
 		WinnerExplanation explanation = entryAllowed ? winnerExplanation(directionalBest, tradeSetup) : null;
-		PortfolioAllocation allocation = portfolioAllocation(entryAllowed ? winner : null, top,
+
+		/*
+		 * --------------------------------------------------------- Portfolio
+		 * Allocation ---------------------------------------------------------
+		 */
+		PortfolioAllocation allocation = portfolioAllocation(
+
+				entryAllowed ? winner : null,
+
+				top,
+
 				normalized.riskProfile());
-		return recommendationAggregator.aggregate(winner, top, rejected, summary, tradeSetup, explanation, allocation,
+
+		/*
+		 * --------------------------------------------------------- Final Response
+		 * ---------------------------------------------------------
+		 */
+		return recommendationAggregator.aggregate(
+
+				winner,
+
+				top,
+
+				rejected,
+
+				summary,
+
+				tradeSetup,
+
+				explanation,
+
+				allocation,
+
 				entryAllowed ? riskPlan(winner, normalized.capital()) : null,
+
+				prediction,
+
+				reversal,
+
 				entryAllowed
 						? "Winner emitted; persist this response with outcome prices to enable backtesting and learning."
 						: "No executable winner: rankings are informational until market-entry gates are met.");

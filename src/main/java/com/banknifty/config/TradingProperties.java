@@ -19,7 +19,7 @@ public class TradingProperties {
 	/**
 	 * Maximum option premium.
 	 */
-	private double maximumPremium = 400;
+	private double maximumPremium = 1000;
 
 	/**
 	 * Minimum traded volume.
@@ -55,7 +55,7 @@ public class TradingProperties {
 	 *
 	 * = 25 CE + 25 PE = 50 contracts
 	 */
-	private int strikesAroundATM = 12;
+	private int strikesAroundATM = 15;
 
 	/**
 	 * Contracts in one BANKNIFTY lot. Used for capital-based position sizing.

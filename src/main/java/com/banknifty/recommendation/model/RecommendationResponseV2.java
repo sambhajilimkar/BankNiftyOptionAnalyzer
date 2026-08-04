@@ -3,9 +3,54 @@ package com.banknifty.recommendation.model;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** V2 API response: decision, alternatives, exclusions, risk and tracking metadata. */
-public record RecommendationResponseV2(LocalDateTime generatedAt, TradeRecommendation winner,
-		List<RankedContract> topContracts, List<RejectedContract> rejectedContracts,
-		MarketSummary marketSummary, TradeSetup tradeSetup, WinnerExplanation winnerExplanation,
-		PortfolioAllocation portfolioAllocation, RiskPlan riskPlan, String trackingStatus) {
+import com.banknifty.analysis.prediction.PredictionSummary;
+
+/**
+ * V2 API response.
+ */
+public record RecommendationResponseV2(
+
+		LocalDateTime generatedAt,
+
+		TradeRecommendation winner,
+
+		List<RankedContract> topContracts,
+
+		List<RejectedContract> rejectedContracts,
+
+		MarketSummary marketSummary,
+
+		TradeSetup tradeSetup,
+
+		WinnerExplanation winnerExplanation,
+
+		PortfolioAllocation portfolioAllocation,
+
+		RiskPlan riskPlan,
+
+		/*
+		 * ----------------------------- Prediction -----------------------------
+		 */
+
+		PredictionSummary prediction,
+
+		/*
+		 * ----------------------------- Reversal Analysis -----------------------------
+		 */
+
+		double continuationProbability,
+
+		double reversalProbability,
+
+		boolean reversalDetected,
+
+		String reversalStrength,
+
+		/*
+		 * ----------------------------- Tracking -----------------------------
+		 */
+
+		String trackingStatus
+
+) {
 }

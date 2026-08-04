@@ -14,77 +14,97 @@ import com.banknifty.indicator.result.MACDResult;
 @Component
 public class MACDWeakeningDetector implements ReversalDetector {
 
-    @Override
-    public void detect(ReversalContext context,
-                       ReversalResult result) {
+	private static final BigDecimal HISTOGRAM_WEAK_ZONE = BigDecimal.valueOf(5);
 
-        MACDResult macd = context.getIndicators().macd();
+	private static final BigDecimal HISTOGRAM_STRONG_ZONE = BigDecimal.valueOf(15);
 
-        if (macd == null) {
-            return;
-        }
+	@Override
+	public void detect(ReversalContext context, ReversalResult result) {
 
-        BigDecimal histogram = macd.histogram();
+		if (context == null || context.getIndicators() == null || context.getIndicators().macd() == null) {
+			return;
+		}
 
-        if (histogram == null) {
-            return;
-        }
+		MACDResult macd = context.getIndicators().macd();
 
-        /*
-         * Histogram close to zero means
-         * momentum is fading.
-         */
+		BigDecimal histogram = macd.histogram();
 
-        if (histogram.abs().doubleValue() < 5.0) {
+		if (histogram == null) {
+			return;
+		}
 
-            if (macd.bullish()) {
+		BigDecimal absHistogram = histogram.abs();
 
-                result.addScore(8);
+		/*
+		 * ------------------------------------------------------- Strong crossover
+		 * -------------------------------------------------------
+		 */
 
-                result.setDirection(ReversalDirection.BEARISH);
+		if (macd.bearishCross()) {
 
-                result.addReason(
-                        ReversalReason.MACD_BEARISH_DIVERGENCE);
+			result.addScore(18);
 
-                return;
-            }
+			result.setDirection(ReversalDirection.BEARISH);
 
-            if (macd.bearish()) {
+			result.addReason(ReversalReason.MACD_BEARISH_DIVERGENCE);
 
-                result.addScore(8);
+			return;
+		}
 
-                result.setDirection(ReversalDirection.BULLISH);
+		if (macd.bullishCross()) {
 
-                result.addReason(
-                        ReversalReason.MACD_BULLISH_DIVERGENCE);
-            }
-        }
+			result.addScore(18);
 
-        /*
-         * Crossovers are stronger reversal signals.
-         */
+			result.setDirection(ReversalDirection.BULLISH);
 
-        if (macd.bearishCross()) {
+			result.addReason(ReversalReason.MACD_BULLISH_DIVERGENCE);
 
-            result.addScore(15);
+			return;
+		}
 
-            result.setDirection(ReversalDirection.BEARISH);
+		/*
+		 * ------------------------------------------------------- Histogram almost flat
+		 * Momentum exhaustion -------------------------------------------------------
+		 */
 
-            result.addReason(
-                    ReversalReason.MACD_BEARISH_DIVERGENCE);
+		if (absHistogram.compareTo(HISTOGRAM_WEAK_ZONE) <= 0) {
 
-            return;
-        }
+			result.addScore(10);
 
-        if (macd.bullishCross()) {
+			if (macd.bullish()) {
 
-            result.addScore(15);
+				result.setDirection(ReversalDirection.BEARISH);
 
-            result.setDirection(ReversalDirection.BULLISH);
+				result.addReason(ReversalReason.MACD_BEARISH_DIVERGENCE);
 
-            result.addReason(
-                    ReversalReason.MACD_BULLISH_DIVERGENCE);
-        }
-    }
+			} else if (macd.bearish()) {
 
+				result.setDirection(ReversalDirection.BULLISH);
+
+				result.addReason(ReversalReason.MACD_BULLISH_DIVERGENCE);
+			}
+
+			return;
+		}
+
+		/*
+		 * ------------------------------------------------------- Histogram shrinking
+		 * but trend still alive Give a smaller warning score.
+		 * -------------------------------------------------------
+		 */
+
+		if (absHistogram.compareTo(HISTOGRAM_STRONG_ZONE) <= 0) {
+
+			result.addScore(5);
+
+			if (macd.bullish()) {
+
+				result.setDirection(ReversalDirection.BEARISH);
+
+			} else if (macd.bearish()) {
+
+				result.setDirection(ReversalDirection.BULLISH);
+			}
+		}
+	}
 }

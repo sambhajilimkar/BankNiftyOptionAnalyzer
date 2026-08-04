@@ -3,7 +3,6 @@ package com.banknifty.recommendation.service;
 import com.banknifty.broker.model.OptionQuote;
 import com.banknifty.config.TradingProperties;
 import com.banknifty.enums.OptionType;
-import com.banknifty.recommendation.config.TradeCandidateProperties;
 import com.banknifty.recommendation.mapper.OptionCandidateMapper;
 import com.banknifty.recommendation.model.OptionCandidate;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +21,6 @@ public class OptionChainAnalyzer {
 
 	private final OptionCandidateMapper mapper;
 	private final TradingProperties tradingProperties;
-	private final TradeCandidateProperties candidateProperties;
 
 	public List<OptionCandidate> analyze(List<OptionQuote> optionChain, BigDecimal spotPrice) {
 
@@ -70,16 +68,16 @@ public class OptionChainAnalyzer {
 				|| quote.bid().signum() <= 0 || quote.ask().compareTo(quote.bid()) < 0) {
 			return false;
 		}
-		if (quote.volume() == null || quote.volume() < candidateProperties.getMinimumVolume()
-				|| quote.openInterest() == null || quote.openInterest() < candidateProperties.getMinimumOpenInterest()) {
-			return false;
-		}
-		if (quote.ltp().doubleValue() < candidateProperties.getMinimumPremium()
-				|| quote.ltp().doubleValue() > candidateProperties.getMaximumPremium()) {
-			return false;
-		}
+		
+		  if (quote.volume() == null || quote.volume() <
+		  tradingProperties.getMinimumVolume() || quote.openInterest() == null ||
+		  quote.openInterest() < tradingProperties.getMinimumOpenInterest()) { return
+		  false; } if (quote.ltp().doubleValue() <
+		  tradingProperties.getMinimumPremium() || quote.ltp().doubleValue() >
+		  tradingProperties.getMaximumPremium()) { return false; }
+		 
 		BigDecimal spreadPercent = quote.ask().subtract(quote.bid()).multiply(BigDecimal.valueOf(100))
 				.divide(quote.ltp(), 4, RoundingMode.HALF_UP);
-		return spreadPercent.doubleValue() <= candidateProperties.getMaximumSpread();
+		return spreadPercent.doubleValue() <= tradingProperties.getMaximumSpread();
 	}
 }

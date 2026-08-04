@@ -12,33 +12,73 @@ import com.banknifty.indicator.result.ADXResult;
 @Component
 public class ADXWeakeningDetector implements ReversalDetector {
 
-	private static final double STRONG_TREND = 25.0;
+	private static final double WEAK_TREND = 20.0;
+	private static final double MODERATE_TREND = 25.0;
+	private static final double STRONG_TREND = 35.0;
 
 	@Override
 	public void detect(ReversalContext context, ReversalResult result) {
 
-		ADXResult adx = context.getIndicators().adx();
-
-		if (adx == null) {
+		if (context == null || context.getIndicators() == null || context.getIndicators().adx() == null) {
 			return;
 		}
+
+		ADXResult adx = context.getIndicators().adx();
 
 		double adxValue = adx.adx();
 
 		/*
-		 * ADX below 25 means the trend is losing strength.
+		 * ---------------------------------------------------- Very weak trend High
+		 * probability of reversal / range
+		 * ----------------------------------------------------
 		 */
-		if (adxValue < STRONG_TREND) {
+		if (adxValue < WEAK_TREND) {
 
-			result.addScore(10);
+			result.addScore(15);
 
 			if (adx.bullish()) {
+
 				result.setDirection(ReversalDirection.BEARISH);
+
 			} else if (adx.bearish()) {
+
 				result.setDirection(ReversalDirection.BULLISH);
 			}
 
 			result.addReason(ReversalReason.ADX_WEAKENING);
+
+			return;
+		}
+
+		/*
+		 * ---------------------------------------------------- Moderate trend Trend
+		 * losing strength ----------------------------------------------------
+		 */
+		if (adxValue < MODERATE_TREND) {
+
+			result.addScore(10);
+
+			if (adx.bullish()) {
+
+				result.setDirection(ReversalDirection.BEARISH);
+
+			} else if (adx.bearish()) {
+
+				result.setDirection(ReversalDirection.BULLISH);
+			}
+
+			result.addReason(ReversalReason.ADX_WEAKENING);
+
+			return;
+		}
+
+		/*
+		 * ---------------------------------------------------- Strong trend Small
+		 * warning only ----------------------------------------------------
+		 */
+		if (adxValue < STRONG_TREND) {
+
+			result.addScore(3);
 		}
 	}
 }

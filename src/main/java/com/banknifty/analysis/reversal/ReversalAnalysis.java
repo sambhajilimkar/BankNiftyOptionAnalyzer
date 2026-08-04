@@ -1,26 +1,106 @@
 package com.banknifty.analysis.reversal;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import lombok.Builder;
 import lombok.Getter;
-
-import java.util.List;
 
 @Getter
 @Builder
 public class ReversalAnalysis {
 
-    private final boolean reversalDetected;
+	/**
+	 * Final reversal decision.
+	 */
+	private final boolean reversalDetected;
 
-    private final ReversalDirection currentTrend;
+	/**
+	 * Current market trend.
+	 */
+	private final ReversalDirection currentTrend;
 
-    private final ReversalDirection predictedTrend;
+	/**
+	 * Expected trend after reversal.
+	 */
+	private final ReversalDirection predictedTrend;
 
-    private final double reversalProbability;
+	/**
+	 * Probability that current trend reverses.
+	 */
+	private final double reversalProbability;
 
-    private final double continuationProbability;
+	/**
+	 * Probability that current trend continues.
+	 */
+	private final double continuationProbability;
 
-    private final ReversalStrength strength;
+	/**
+	 * Overall reversal strength.
+	 */
+	private final ReversalStrength strength;
 
-    private final List<ReversalReason> reasons;
+	/**
+	 * Reasons contributing to the prediction.
+	 */
+	@Builder.Default
+	private final List<ReversalReason> reasons = new ArrayList<>();
 
+	/**
+	 * Convenience method.
+	 */
+	public boolean bullishReversal() {
+		return predictedTrend == ReversalDirection.BULLISH;
+	}
+
+	/**
+	 * Convenience method.
+	 */
+	public boolean bearishReversal() {
+		return predictedTrend == ReversalDirection.BEARISH;
+	}
+
+	/**
+	 * Safe probability (0-100).
+	 */
+	public int reversalPercent() {
+		return (int) Math.round(reversalProbability);
+	}
+
+	/**
+	 * Safe probability (0-100).
+	 */
+	public int continuationPercent() {
+		return (int) Math.round(continuationProbability);
+	}
+
+	/**
+	 * High confidence reversal.
+	 */
+	public boolean highConfidence() {
+		return reversalProbability >= 75;
+	}
+
+	/**
+	 * Moderate confidence reversal.
+	 */
+	public boolean moderateConfidence() {
+		return reversalProbability >= 60;
+	}
+
+	/**
+	 * Low confidence reversal.
+	 */
+	public boolean lowConfidence() {
+		return reversalProbability < 40;
+	}
+
+	/**
+	 * Human readable summary.
+	 */
+	public String summary() {
+
+		return String.format("%s | Reversal %.0f%% | Continuation %.0f%%", strength, reversalProbability,
+				continuationProbability);
+	}
 }

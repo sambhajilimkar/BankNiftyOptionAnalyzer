@@ -25,9 +25,9 @@ public class RecommendationController {
 
 			@RequestParam(defaultValue = "BANKNIFTY") String instrument,
 
-			@RequestParam(defaultValue = "WEEKLY") ExpiryType expiryType,
+			@RequestParam(defaultValue = "MONTHLY") ExpiryType expiryType,
 
-			@RequestParam(defaultValue = "INTRADAY") TradingStyle tradingStyle,
+			@RequestParam(defaultValue = "SWING") TradingStyle tradingStyle,
 
 			@RequestParam(defaultValue = "BALANCED") RiskProfile riskProfile,
 
@@ -48,8 +48,8 @@ public class RecommendationController {
 	@GetMapping("/v2")
 	public ResponseEntity<RecommendationResponseV2> recommendV2(
 			@RequestParam(defaultValue = "BANKNIFTY") String instrument,
-			@RequestParam(defaultValue = "WEEKLY") ExpiryType expiryType,
-			@RequestParam(defaultValue = "INTRADAY") TradingStyle tradingStyle,
+			@RequestParam(defaultValue = "MONTHLY") ExpiryType expiryType,
+			@RequestParam(defaultValue = "SWING") TradingStyle tradingStyle,
 			@RequestParam(defaultValue = "BALANCED") RiskProfile riskProfile,
 			@RequestParam(required = false) Double capital) {
 		RecommendationRequest request = RecommendationRequest.builder().instrument(instrument).expiryType(expiryType)
