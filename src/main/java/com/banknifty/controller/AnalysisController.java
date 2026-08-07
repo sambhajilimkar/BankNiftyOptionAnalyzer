@@ -1,6 +1,6 @@
 package com.banknifty.controller;
 
-import com.banknifty.model.OptionRecommendation;
+import com.banknifty.recommendation.model.RecommendationResponse;
 import com.banknifty.service.AnalysisService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -24,7 +24,7 @@ public class AnalysisController {
 	 * &exchange=NFO &interval=5minute
 	 */
 	@GetMapping
-	public OptionRecommendation analyze(
+	public RecommendationResponse analyze(
 
 			@RequestParam Long instrumentToken,
 
@@ -60,7 +60,7 @@ public class AnalysisController {
 	 * Convenience endpoint for BANKNIFTY.
 	 */
 	@GetMapping("/banknifty")
-	public OptionRecommendation bankNifty() {
+	public RecommendationResponse bankNifty() {
 
 		return analysisService.analyze(
 

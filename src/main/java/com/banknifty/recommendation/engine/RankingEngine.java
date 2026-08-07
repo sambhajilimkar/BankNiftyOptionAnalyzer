@@ -295,7 +295,7 @@ public class RankingEngine {
 		OptionCandidate candidate = analysis.getCandidate();
 
 		/*
-		 * Premium Check
+		 * Premium
 		 */
 		if (candidate.getPremium() == null || candidate.getPremium().doubleValue() <= 0) {
 
@@ -304,7 +304,7 @@ public class RankingEngine {
 		}
 
 		/*
-		 * Liquidity Check
+		 * Basic Liquidity
 		 */
 		if (candidate.getLiquidityIndex() != null && candidate.getLiquidityIndex().doubleValue() <= 0) {
 
@@ -313,23 +313,8 @@ public class RankingEngine {
 		}
 
 		/*
-		 * Minimum Score
+		 * Let RecommendationValidationEngine decide everything else.
 		 */
-		if (analysis.getTotalScore() < 70) {
-
-			analysis.addReason("Rejected : Low Score");
-			return false;
-		}
-
-		/*
-		 * Minimum Confidence
-		 */
-		if (analysis.getConfidence() < 65) {
-
-			analysis.addReason("Rejected : Low Confidence");
-			return false;
-		}
-
 		return true;
 	}
 

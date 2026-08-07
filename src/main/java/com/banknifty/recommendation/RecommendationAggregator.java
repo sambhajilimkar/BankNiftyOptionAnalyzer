@@ -12,7 +12,7 @@ import com.banknifty.analysis.reversal.ReversalStrength;
 import com.banknifty.recommendation.model.MarketSummary;
 import com.banknifty.recommendation.model.PortfolioAllocation;
 import com.banknifty.recommendation.model.RankedContract;
-import com.banknifty.recommendation.model.RecommendationResponseV2;
+import com.banknifty.recommendation.model.RecommendationResponse;
 import com.banknifty.recommendation.model.RejectedContract;
 import com.banknifty.recommendation.model.RiskPlan;
 import com.banknifty.recommendation.model.TradeRecommendation;
@@ -34,7 +34,7 @@ public class RecommendationAggregator {
 	/**
 	 * Backward compatible overload.
 	 */
-	public RecommendationResponseV2 aggregate(TradeRecommendation winner, List<RankedContract> topContracts,
+	public RecommendationResponse aggregate(TradeRecommendation winner, List<RankedContract> topContracts,
 			List<RejectedContract> rejectedContracts, MarketSummary marketSummary, TradeSetup tradeSetup,
 			WinnerExplanation winnerExplanation, PortfolioAllocation portfolioAllocation, RiskPlan riskPlan,
 			String trackingStatus) {
@@ -46,7 +46,7 @@ public class RecommendationAggregator {
 	/**
 	 * Overload with reversal analysis.
 	 */
-	public RecommendationResponseV2 aggregate(TradeRecommendation winner, List<RankedContract> topContracts,
+	public RecommendationResponse aggregate(TradeRecommendation winner, List<RankedContract> topContracts,
 			List<RejectedContract> rejectedContracts, MarketSummary marketSummary, TradeSetup tradeSetup,
 			WinnerExplanation winnerExplanation, PortfolioAllocation portfolioAllocation, RiskPlan riskPlan,
 			ReversalAnalysis reversal, String trackingStatus) {
@@ -58,7 +58,7 @@ public class RecommendationAggregator {
 	/**
 	 * Full V3 aggregation.
 	 */
-	public RecommendationResponseV2 aggregate(TradeRecommendation winner, List<RankedContract> topContracts,
+	public RecommendationResponse aggregate(TradeRecommendation winner, List<RankedContract> topContracts,
 			List<RejectedContract> rejectedContracts, MarketSummary marketSummary, TradeSetup tradeSetup,
 			WinnerExplanation winnerExplanation, PortfolioAllocation portfolioAllocation, RiskPlan riskPlan,
 			PredictionAnalysis prediction, ReversalAnalysis reversal, String trackingStatus) {
@@ -69,7 +69,7 @@ public class RecommendationAggregator {
 						.continuationProbability(prediction.getContinuationProbability())
 						.reversalProbability(prediction.getReversalProbability()).build();
 
-		RecommendationResponseV2 response = new RecommendationResponseV2(
+		RecommendationResponse response = new RecommendationResponse(
 
 				LocalDateTime.now(),
 

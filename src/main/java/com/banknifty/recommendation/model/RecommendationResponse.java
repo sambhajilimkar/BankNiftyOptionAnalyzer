@@ -8,7 +8,7 @@ import com.banknifty.analysis.prediction.PredictionSummary;
 /**
  * V2 API response.
  */
-public record RecommendationResponseV2(
+public record RecommendationResponse(
 
 		LocalDateTime generatedAt,
 

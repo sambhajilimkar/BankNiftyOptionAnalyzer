@@ -39,7 +39,7 @@ public class OptionAnalysisEngine {
 
 		scoreSupportResistance(context, analysis);
 
-		scorePivot(context, analysis);
+		scorePivot(context, candidate, analysis);
 
 		scoreExpiry(candidate, analysis);
 
@@ -155,14 +155,14 @@ public class OptionAnalysisEngine {
 		 * =====================================================
 		 */
 
-		score += institutional.getGammaExposureScore() * 0.10;
+		score += institutional.getGammaExposureScore() * 0.05;
 
 		/*
 		 * ===================================================== OI Score
 		 * =====================================================
 		 */
 
-		score += institutional.getOiScore() * 0.20;
+		score += institutional.getOiScore() * 0.10;
 
 		analysis.addScore(score);
 
@@ -320,7 +320,7 @@ public class OptionAnalysisEngine {
 		analysis.addScore(score);
 	}
 
-	private void scorePivot(AnalysisContext context, OptionAnalysis analysis) {
+	private void scorePivot(AnalysisContext context, OptionCandidate candidate, OptionAnalysis analysis) {
 
 		if (context.getPivot() == null) {
 			return;
@@ -328,14 +328,12 @@ public class OptionAnalysisEngine {
 
 		double score = 0;
 
-		if (context.getPivot().bullish()) {
-
+		if (candidate.getOptionType() == OptionType.CE && context.getPivot().bullish()) {
 			score += 5;
 			analysis.addReason("Bullish Pivot");
 		}
 
-		if (context.getPivot().bearish()) {
-
+		if (candidate.getOptionType() == OptionType.PE && context.getPivot().bearish()) {
 			score += 5;
 			analysis.addReason("Bearish Pivot");
 		}
@@ -460,7 +458,7 @@ public class OptionAnalysisEngine {
 			}
 		}
 
-		score = Math.min(score, 5);
+		score = Math.min(score, 8);
 
 		analysis.setGreekScore(score);
 		analysis.addScore(score);

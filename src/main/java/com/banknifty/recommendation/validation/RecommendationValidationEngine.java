@@ -2,119 +2,111 @@ package com.banknifty.recommendation.validation;
 
 import org.springframework.stereotype.Service;
 
+import com.banknifty.analysis.MarketBias;
 import com.banknifty.analysis.context.AnalysisContext;
+import com.banknifty.config.TradingProperties;
 import com.banknifty.recommendation.model.OptionAnalysis;
 import com.banknifty.recommendation.model.OptionCandidate;
 
+import lombok.RequiredArgsConstructor;
+
 @Service
+@RequiredArgsConstructor
 public class RecommendationValidationEngine {
 
-    private static final double MIN_SCORE = 70;
-    private static final double MIN_CONFIDENCE = 70;
-    private static final double MIN_PROBABILITY = 75;
-    private static final double MIN_LIQUIDITY = 70;
-    private static final double MIN_RISK_REWARD = 5;
+	private final TradingProperties tradingProperties;
 
-    public RecommendationValidationResult validate(
-            AnalysisContext context,
-            OptionAnalysis analysis) {
+	public RecommendationValidationResult validate(AnalysisContext context, OptionAnalysis analysis) {
 
-        RecommendationValidationResult result =
-                RecommendationValidationResult.builder().build();
+		RecommendationValidationResult result = RecommendationValidationResult.builder().build();
 
-        if (analysis == null || analysis.getCandidate() == null) {
+		if (analysis == null || analysis.getCandidate() == null) {
+			result.reject("Analysis unavailable");
+			return result;
+		}
 
-            result.reject("Analysis unavailable");
-            return result;
-        }
+		OptionCandidate candidate = analysis.getCandidate();
 
-        OptionCandidate candidate = analysis.getCandidate();
+		/*
+		 * Premium
+		 */
+		if (candidate.getPremium() == null) {
+			result.reject("Premium unavailable");
+		} else {
 
-        /*
-         * Total Score
-         */
-        if (analysis.getTotalScore() < MIN_SCORE) {
-            result.reject("Low Total Score");
-        }
+			double premium = candidate.getPremium().doubleValue();
 
-        /*
-         * Confidence
-         */
-        if (analysis.getConfidence() < MIN_CONFIDENCE) {
-            result.reject("Low Confidence");
-        }
+			if (premium < tradingProperties.getMinimumPremium()) {
 
-        /*
-         * Probability
-         */
-        if (analysis.getProbabilityScore() < MIN_PROBABILITY) {
-            result.reject("Low Probability");
-        }
+				result.reject(String.format("Premium %.2f below minimum %.2f", premium,
+						tradingProperties.getMinimumPremium()));
+			}
 
-        /*
-         * Liquidity
-         */
-        if (analysis.getLiquidityScore() < MIN_LIQUIDITY) {
-            result.reject("Poor Liquidity");
-        }
+			if (premium > tradingProperties.getMaximumPremium()) {
 
-        /*
-         * Risk Reward
-         */
-        if (analysis.getRiskRewardScore() < MIN_RISK_REWARD) {
-            result.reject("Poor Risk Reward");
-        }
+				result.reject(String.format("Premium %.2f above maximum %.2f", premium,
+						tradingProperties.getMaximumPremium()));
+			}
+		}
 
-        /*
-         * Premium
-         */
-        if (candidate.getPremium() == null
-                || candidate.getPremium().doubleValue() <= 0) {
+		/*
+		 * Volume
+		 */
+		if (candidate.getVolume() < tradingProperties.getMinimumVolume()) {
 
-            result.reject("Invalid Premium");
-        }
+			result.reject(String.format("Volume %d below minimum %d", candidate.getVolume(),
+					tradingProperties.getMinimumVolume()));
+		}
 
-        /*
-         * Spread
-         */
-        if (candidate.getSpreadPercentage() != null
-                && candidate.getSpreadPercentage().doubleValue() > 1.5) {
+		/*
+		 * Open Interest
+		 */
+		if (candidate.getOpenInterest() < tradingProperties.getMinimumOpenInterest()) {
 
-            result.reject("High Bid/Ask Spread");
-        }
+			result.reject(String.format("Open Interest %d below minimum %d", candidate.getOpenInterest(),
+					tradingProperties.getMinimumOpenInterest()));
+		}
 
-        /*
-         * Open Interest
-         */
-        if (candidate.getOpenInterest() < 10000) {
+		/*
+		 * Bid / Ask Spread
+		 */
+		if (candidate.getSpreadPercentage() != null
+				&& candidate.getSpreadPercentage().doubleValue() > tradingProperties.getMaximumSpread()) {
 
-            result.reject("Low Open Interest");
-        }
+			result.reject(String.format("Spread %.2f%% exceeds %.2f%%", candidate.getSpreadPercentage().doubleValue(),
+					tradingProperties.getMaximumSpread()));
+		}
 
-        /*
-         * Trend vs Institutional Bias
-         */
-        if (context != null
-                && context.getInstitutionalAnalysis() != null
-                && context.getInstitutionalAnalysis().getMarketBias() != null
-                && context.getMarketBias() != null) {
+		/*
+		 * Institutional Direction
+		 *
+		 * Optional. Normally disabled.
+		 */
+		if (tradingProperties.isValidateInstitutionalDirection() && context != null
+				&& context.getInstitutionalAnalysis() != null
+				&& context.getInstitutionalAnalysis().getMarketBias() != null && context.getMarketBias() != null
+				&& !sameDirection(context.getMarketBias(), context.getInstitutionalAnalysis().getMarketBias())) {
 
-            if (!context.getInstitutionalAnalysis()
-                    .getMarketBias()
-                    .name()
-                    .contains(context.getMarketBias().name())) {
+			result.reject("Technical and Institutional direction mismatch");
+		}
 
-                result.reject("Institutional Bias Mismatch");
-            }
-        }
+		if (!result.hasErrors()) {
+			result.approve();
+		}
 
-        /*
-         * Final Decision
-         */
-        if (!result.hasErrors()) {
-            result.approve();
-        }
+		return result;
+	}
 
-        return result;
-    }
+	private boolean sameDirection(MarketBias technical, MarketBias institutional) {
+
+		boolean technicalBull = technical == MarketBias.BULLISH || technical == MarketBias.STRONG_BULLISH;
+
+		boolean institutionalBull = institutional == MarketBias.BULLISH || institutional == MarketBias.STRONG_BULLISH;
+
+		boolean technicalBear = technical == MarketBias.BEARISH || technical == MarketBias.STRONG_BEARISH;
+
+		boolean institutionalBear = institutional == MarketBias.BEARISH || institutional == MarketBias.STRONG_BEARISH;
+
+		return (technicalBull && institutionalBull) || (technicalBear && institutionalBear);
+	}
 }

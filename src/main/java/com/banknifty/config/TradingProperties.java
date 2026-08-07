@@ -1,9 +1,10 @@
 package com.banknifty.config;
 
-import lombok.Getter;
-import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+
+import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 @Setter
@@ -32,7 +33,7 @@ public class TradingProperties {
 	private long minimumOpenInterest = 5000;
 
 	/**
-	 * Maximum allowed bid-ask spread.
+	 * Maximum allowed bid-ask spread (%).
 	 */
 	private double maximumSpread = 2.5;
 
@@ -42,24 +43,55 @@ public class TradingProperties {
 	private int strikeStep = 100;
 
 	/**
-	 * Maximum strike distance from ATM. Used for broad filtering if required.
+	 * Maximum strike distance from ATM.
 	 */
 	private int maxStrikeDistance = 2000;
 
 	/**
-	 * Number of strikes to analyze on each side of ATM.
-	 *
-	 * Example: strikesAroundATM = 12
-	 *
-	 * 12 ITM +1 ATM 12 OTM
-	 *
-	 * = 25 CE + 25 PE = 50 contracts
+	 * Number of strikes to analyse on each side of ATM.
 	 */
 	private int strikesAroundATM = 15;
 
 	/**
-	 * Contracts in one BANKNIFTY lot. Used for capital-based position sizing.
+	 * BANKNIFTY lot size.
 	 */
 	private int lotSize = 30;
+
+	// ==========================================================
+	// Recommendation Configuration
+	// ==========================================================
+
+	/**
+	 * Minimum technical confidence required.
+	 */
+	private int minimumTechnicalConfidence = 60;
+
+	/**
+	 * Minimum combined recommendation confidence.
+	 */
+	private int minimumRecommendationConfidence = 55;
+
+	/**
+	 * Reversal probability above which entries are blocked.
+	 */
+	private int maximumAllowedReversalProbability = 75;
+
+	/**
+	 * Number of contracts passed from RankingEngine to ValidationEngine.
+	 */
+	private int rankingCandidates = 20;
+
+	/**
+	 * Number of contracts returned in API response.
+	 */
+	private int topContracts = 5;
+
+	/**
+	 * Whether institutional direction mismatch should reject a trade.
+	 *
+	 * Recommended: false RankingEngine should apply a penalty instead of hard
+	 * rejection.
+	 */
+	private boolean validateInstitutionalDirection = false;
 
 }

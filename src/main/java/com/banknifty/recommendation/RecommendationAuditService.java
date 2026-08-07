@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import org.springframework.stereotype.Service;
 
 import com.banknifty.entity.RecommendationAuditEntity;
-import com.banknifty.recommendation.model.RecommendationResponseV2;
+import com.banknifty.recommendation.model.RecommendationResponse;
 import com.banknifty.repository.RecommendationAuditRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,7 +21,7 @@ public class RecommendationAuditService {
 	private final RecommendationAuditRepository repository;
 	private final ObjectMapper objectMapper;
 
-	public void record(RecommendationResponseV2 response) {
+	public void record(RecommendationResponse response) {
 		try {
 			String symbol = response.winner() == null ? null : response.winner().optionType() == null ? null
 					: response.winner().strikePrice() + " " + response.winner().optionType();

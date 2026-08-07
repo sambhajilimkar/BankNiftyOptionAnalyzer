@@ -1,49 +1,41 @@
 package com.banknifty.service;
 
-import com.banknifty.engine.RecommendationEngine;
 import com.banknifty.engine.TrendScoreEngine;
 import com.banknifty.market.MarketDataService;
-import com.banknifty.model.Candle;
-import com.banknifty.model.OptionRecommendation;
-import com.banknifty.model.TrendScore;
+import com.banknifty.recommendation.engine.RecommendationEngine;
+import com.banknifty.recommendation.model.RecommendationRequest;
+import com.banknifty.recommendation.model.RecommendationResponse;
+
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Service
 public class AnalysisService {
 
-	private final MarketDataService marketDataService;
-	private final TrendScoreEngine trendScoreEngine;
 	private final RecommendationEngine recommendationEngine;
 
 	public AnalysisService(MarketDataService marketDataService, TrendScoreEngine trendScoreEngine,
 			RecommendationEngine recommendationEngine) {
 
-		this.marketDataService = marketDataService;
-		this.trendScoreEngine = trendScoreEngine;
 		this.recommendationEngine = recommendationEngine;
 	}
 
 	/**
 	 * Analyze any instrument.
 	 */
-	public OptionRecommendation analyze(Long instrumentToken, String tradingSymbol, String exchange, String interval,
+	public RecommendationResponse analyze(Long instrumentToken, String tradingSymbol, String exchange, String interval,
 			LocalDateTime from, LocalDateTime to) {
 
-		List<Candle> candles = marketDataService.getHistoricalCandles(instrumentToken, tradingSymbol, exchange,
-				interval, from, to);
+		RecommendationRequest request = RecommendationRequest.builder().instrument(tradingSymbol).build();
 
-		TrendScore trendScore = trendScoreEngine.calculate(candles);
-
-		return recommendationEngine.recommend(trendScore);
+		return recommendationEngine.recommend(request);
 	}
 
 	/**
 	 * Convenience method for BANKNIFTY.
 	 */
-	public OptionRecommendation analyzeBankNifty(Long instrumentToken, LocalDateTime from, LocalDateTime to) {
+	public RecommendationResponse analyzeBankNifty(Long instrumentToken, LocalDateTime from, LocalDateTime to) {
 
 		return analyze(instrumentToken, "BANKNIFTY", "NFO", "5minute", from, to);
 	}
